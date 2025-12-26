@@ -138,6 +138,25 @@ export default function NewItemScreen() {
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>
+              Import Files
+            </Text>
+            <Text style={styles.sectionDescription}>
+              Import multiple files at once (images, documents, audio, video)
+            </Text>
+            <Button
+              mode="contained"
+              onPress={() => router.push('/import')}
+              style={styles.importButton}
+              icon="file-upload"
+            >
+              Import Files
+            </Button>
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
               Media (Coming Soon)
             </Text>
             <View style={styles.mediaButtons}>
@@ -202,6 +221,14 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     marginBottom: 12,
     fontWeight: '500',
+  },
+  sectionDescription: {
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 12,
+    fontSize: 14,
+  },
+  importButton: {
+    marginTop: 8,
   },
   textInput: {
     marginBottom: 16,
