@@ -5,12 +5,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { format } from 'date-fns';
 import { JournalItem, db } from '@/lib/storage/db';
+import { MediaItemWithTags } from '@/lib/storage/types';
 import { useJournalStore } from '@/lib/store';
+import { getMediaTitle } from '@/lib/utils/mediaHelpers';
 import { theme } from '@/lib/theme';
+
+type DisplayItem = JournalItem | MediaItemWithTags;
 
 export default function ItemScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [item, setItem] = useState<JournalItem | null>(null);
+  const [item, setItem] = useState<DisplayItem | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,6 +27,13 @@ export default function ItemScreen() {
       
       try {
         await db.init();
+        // Try new API first
+        const mediaItem = await db.getMediaItem(id);
+        if (mediaItem) {
+          setItem(mediaItem);
+          return;
+        }
+        // Fallback to legacy API
         const journalItem = await db.getItem(id);
         setItem(journalItem);
       } catch (dbError) {
@@ -69,11 +80,26 @@ export default function ItemScreen() {
     );
   }
 
+  // Extract display data with compatibility for both old and new types
+  const isLegacyItem = 'clean_text' in item;
+  const displayTitle = isLegacyItem 
+    ? ((item as JournalItem).clean_text || 'Untitled').slice(0, 50)
+    : getMediaTitle(item as MediaItemWithTags);
+  const displayContent = isLegacyItem
+    ? (item as JournalItem).clean_text || ''
+    : (item as MediaItemWithTags).notes || 
+      (item as MediaItemWithTags).extracted_text || 
+      (item as MediaItemWithTags).title || '';
+  const displayTags = isLegacyItem
+    ? (item as JournalItem).tags || []
+    : (item as MediaItemWithTags).tags?.map(t => t.name) || [];
+  const hasEmbedding = isLegacyItem && (item as JournalItem).embedding;
+
   return (
     <SafeAreaView style={styles.container}>
       <Appbar.Header style={styles.header}>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Journal Entry" titleStyle={styles.headerTitle} />
+        <Appbar.Content title={displayTitle} titleStyle={styles.headerTitle} />
       </Appbar.Header>
 
       <ScrollView style={styles.content}>
@@ -88,19 +114,21 @@ export default function ItemScreen() {
               </Text>
             </View>
 
-            <View style={styles.contentSection}>
-              <Text variant="bodyLarge" style={styles.text}>
-                {item.clean_text}
-              </Text>
-            </View>
+            {displayContent && (
+              <View style={styles.contentSection}>
+                <Text variant="bodyLarge" style={styles.text}>
+                  {displayContent}
+                </Text>
+              </View>
+            )}
 
-            {item.tags.length > 0 && (
+            {displayTags.length > 0 && (
               <View style={styles.tagsSection}>
                 <Text variant="titleSmall" style={styles.tagsTitle}>
                   Tags
                 </Text>
                 <View style={styles.tagsContainer}>
-                  {item.tags.map((tag, index) => (
+                  {displayTags.map((tag, index) => (
                     <Chip
                       key={index}
                       style={styles.tag}
@@ -118,14 +146,16 @@ export default function ItemScreen() {
               <Text variant="bodySmall" style={styles.infoText}>
                 Type: {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
               </Text>
-              {item.embedding && (
+              {hasEmbedding && (
                 <Text variant="bodySmall" style={styles.infoText}>
-                  AI embedding: Generated ({item.embedding.length} dimensions)
+                  AI embedding: Generated ({(item as JournalItem).embedding!.length} dimensions)
                 </Text>
               )}
-              <Text variant="bodySmall" style={styles.infoText}>
-                Word count: {item.clean_text.split(/\s+/).length}
-              </Text>
+              {displayContent && (
+                <Text variant="bodySmall" style={styles.infoText}>
+                  Word count: {displayContent.split(/\s+/).filter(w => w).length}
+                </Text>
+              )}
             </View>
           </Card.Content>
         </Card>
