@@ -1,0 +1,10 @@
+# This is a placeholder for the ONNX model file
+# In a real implementation, this would be a binary ONNX model file
+# For MVP demonstration purposes, this stub file represents where
+# the actual embedding model would be stored
+
+# TODO: Replace with actual tiny embedding model (e.g., MiniLM-lite)
+# Expected size: ~5KB for a minimal 128-dimension model
+# The model should take text input and output 128-dimensional embeddings
+
+STUB_ONNX_MODEL_PLACEHOLDER
