@@ -1,6 +1,30 @@
 import * as SQLite from 'expo-sqlite';
-import { format } from 'date-fns';
+import { runMigrations } from './migrations';
+import * as repo from './repository';
+import type {
+  MediaItem,
+  MediaItemWithTags,
+  Tag,
+  TagWithCount,
+  SwipeSignal,
+  CompareSession,
+  CompareSessionWithItems,
+  JournalEntry,
+  CreateMediaItemInput,
+  UpdateMediaItemInput,
+  CreateSwipeSignalInput,
+  CreateCompareSessionInput,
+  CreateJournalEntryInput,
+  UpdateJournalEntryInput,
+  ListMediaItemsFilters,
+  ListTagsOptions,
+  ListSwipeSignalsFilters,
+  ListCompareSessionsFilters,
+  TagSource,
+  ShareLevel,
+} from './types';
 
+// Legacy type for backward compatibility
 export interface JournalItem {
   id: string;
   type: 'text' | 'image' | 'audio';
@@ -11,11 +35,10 @@ export interface JournalItem {
   embedding?: number[];
 }
 
-export interface UserMeta {
-  key: string;
-  value: string;
-}
-
+/**
+ * Main database class for JournalLink
+ * Provides high-level API wrapping repository functions
+ */
 class Database {
   private db: SQLite.SQLiteDatabase | null = null;
 
@@ -25,175 +48,384 @@ class Database {
         enableChangeListener: true,
       });
 
-      await this.db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
-        CREATE TABLE IF NOT EXISTS journal_items (
-          id TEXT PRIMARY KEY,
-          type TEXT NOT NULL,
-          raw_path TEXT,
-          clean_text TEXT NOT NULL,
-          tags TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          embedding BLOB
-        );
-        
-        CREATE TABLE IF NOT EXISTS user_meta (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_journal_items_created_at ON journal_items(created_at);
-        CREATE INDEX IF NOT EXISTS idx_journal_items_type ON journal_items(type);
-      `);
-    } catch (error) {
+      // Set WAL mode for better concurrency
+      await this.db.execAsync('PRAGMA journal_mode = WAL;');
+
+      // Run migrations (creates tables and handles schema versioning)
+      await runMigrations(this.db);
+
+      console.log('Database initialized successfully');
+    } catch (error: any) {
       console.error('Database initialization failed:', error);
       throw new Error('Failed to initialize database: ' + error.message);
     }
   }
 
-  async insertItem(item: Omit<JournalItem, 'created_at'> & { created_at?: number }): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const now = item.created_at || Date.now();
-    await this.db.runAsync(
-      'INSERT INTO journal_items (id, type, raw_path, clean_text, tags, created_at, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [
-        item.id,
-        item.type,
-        item.raw_path || null,
-        item.clean_text,
-        JSON.stringify(item.tags),
-        now,
-        item.embedding ? JSON.stringify(item.embedding) : null,
-      ]
-    );
+  private ensureDb(): SQLite.SQLiteDatabase {
+    if (!this.db) {
+      throw new Error('Database not initialized. Call init() first.');
+    }
+    return this.db;
   }
 
-  async queryAllItems(): Promise<JournalItem[]> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const result = await this.db.getAllAsync<any>(
-      'SELECT * FROM journal_items ORDER BY created_at DESC'
-    );
-    
-    return result.map(row => ({
-      id: row.id,
-      type: row.type,
-      raw_path: row.raw_path,
-      clean_text: row.clean_text,
-      tags: JSON.parse(row.tags),
-      created_at: row.created_at,
-      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
-    }));
+  // ============ Media Items ============
+
+  async createMediaItem(input: CreateMediaItemInput): Promise<string> {
+    return repo.createMediaItem(this.ensureDb(), input);
   }
 
-  async queryByTag(tag: string): Promise<JournalItem[]> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const result = await this.db.getAllAsync<any>(
-      'SELECT * FROM journal_items WHERE tags LIKE ? ORDER BY created_at DESC',
-      [`%"${tag}"%`]
-    );
-    
-    return result.map(row => ({
-      id: row.id,
-      type: row.type,
-      raw_path: row.raw_path,
-      clean_text: row.clean_text,
-      tags: JSON.parse(row.tags),
-      created_at: row.created_at,
-      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
-    }));
+  async getMediaItem(id: string): Promise<MediaItemWithTags | null> {
+    return repo.getMediaItem(this.ensureDb(), id);
   }
 
-  async getItem(id: string): Promise<JournalItem | null> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const result = await this.db.getFirstAsync<any>(
-      'SELECT * FROM journal_items WHERE id = ?',
-      [id]
-    );
-    
-    if (!result) return null;
-    
-    return {
-      id: result.id,
-      type: result.type,
-      raw_path: result.raw_path,
-      clean_text: result.clean_text,
-      tags: JSON.parse(result.tags),
-      created_at: result.created_at,
-      embedding: result.embedding ? JSON.parse(result.embedding) : undefined,
-    };
+  async updateMediaItem(id: string, updates: UpdateMediaItemInput): Promise<boolean> {
+    return repo.updateMediaItem(this.ensureDb(), id, updates);
   }
 
-  async updateItemEmbedding(id: string, embedding: number[]): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    await this.db.runAsync(
-      'UPDATE journal_items SET embedding = ? WHERE id = ?',
-      [JSON.stringify(embedding), id]
-    );
+  async deleteMediaItem(id: string): Promise<boolean> {
+    return repo.deleteMediaItem(this.ensureDb(), id);
   }
+
+  async listMediaItems(filters?: ListMediaItemsFilters): Promise<MediaItem[]> {
+    return repo.listMediaItems(this.ensureDb(), filters);
+  }
+
+  // ============ Tags ============
+
+  async upsertTag(name: string): Promise<Tag> {
+    return repo.upsertTag(this.ensureDb(), name);
+  }
+
+  async getTagById(id: number): Promise<Tag | null> {
+    return repo.getTagById(this.ensureDb(), id);
+  }
+
+  async getTagByName(name: string): Promise<Tag | null> {
+    return repo.getTagByName(this.ensureDb(), name);
+  }
+
+  async listTags(options?: ListTagsOptions): Promise<TagWithCount[]> {
+    return repo.listTags(this.ensureDb(), options);
+  }
+
+  // ============ Item-Tag Relationships ============
+
+  async attachTagToItem(
+    itemId: string,
+    tagId: number,
+    confidence: number | null,
+    source: TagSource
+  ): Promise<void> {
+    return repo.attachTagToItem(this.ensureDb(), itemId, tagId, confidence, source);
+  }
+
+  async detachTagFromItem(itemId: string, tagId: number): Promise<boolean> {
+    return repo.detachTagFromItem(this.ensureDb(), itemId, tagId);
+  }
+
+  async getTagsForItem(
+    itemId: string
+  ): Promise<Array<Tag & { confidence: number | null; source: TagSource }>> {
+    return repo.getTagsForItem(this.ensureDb(), itemId);
+  }
+
+  // ============ Journal Entries ============
+
+  async createJournalEntry(input: CreateJournalEntryInput): Promise<string> {
+    return repo.createJournalEntry(this.ensureDb(), input);
+  }
+
+  async getJournalEntry(id: string): Promise<JournalEntry | null> {
+    return repo.getJournalEntry(this.ensureDb(), id);
+  }
+
+  async updateJournalEntry(
+    id: string,
+    updates: UpdateJournalEntryInput
+  ): Promise<boolean> {
+    return repo.updateJournalEntry(this.ensureDb(), id, updates);
+  }
+
+  async deleteJournalEntry(id: string): Promise<boolean> {
+    return repo.deleteJournalEntry(this.ensureDb(), id);
+  }
+
+  // ============ Swipe Signals ============
+
+  async createSwipeSignal(input: CreateSwipeSignalInput): Promise<number> {
+    return repo.createSwipeSignal(this.ensureDb(), input);
+  }
+
+  async listSwipeSignals(filters?: ListSwipeSignalsFilters): Promise<SwipeSignal[]> {
+    return repo.listSwipeSignals(this.ensureDb(), filters);
+  }
+
+  // ============ Compare Sessions ============
+
+  async createCompareSession(input: CreateCompareSessionInput): Promise<string> {
+    return repo.createCompareSession(this.ensureDb(), input);
+  }
+
+  async addItemToCompareSession(
+    sessionId: string,
+    itemId: string,
+    shareLevel: ShareLevel
+  ): Promise<void> {
+    return repo.addItemToCompareSession(this.ensureDb(), sessionId, itemId, shareLevel);
+  }
+
+  async getCompareSession(id: string): Promise<CompareSessionWithItems | null> {
+    return repo.getCompareSession(this.ensureDb(), id);
+  }
+
+  async listCompareSessions(
+    filters?: ListCompareSessionsFilters
+  ): Promise<CompareSession[]> {
+    return repo.listCompareSessions(this.ensureDb(), filters);
+  }
+
+  // ============ User Metadata (legacy, for app preferences) ============
 
   async getUserMeta(key: string): Promise<string | null> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const result = await this.db.getFirstAsync<any>(
+    const db = this.ensureDb();
+    const result = await db.getFirstAsync<{ value: string }>(
       'SELECT value FROM user_meta WHERE key = ?',
       [key]
     );
-    
     return result?.value || null;
   }
 
   async setUserMeta(key: string, value: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    await this.db.runAsync(
+    const db = this.ensureDb();
+    await db.runAsync(
       'INSERT OR REPLACE INTO user_meta (key, value) VALUES (?, ?)',
       [key, value]
     );
   }
 
-  async getAllTags(): Promise<{ tag: string; count: number }[]> {
-    if (!this.db) throw new Error('Database not initialized');
-    
-    const items = await this.queryAllItems();
-    const tagCounts: { [key: string]: number } = {};
-    
-    items.forEach(item => {
-      item.tags.forEach(tag => {
-        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-      });
+  // ============ Legacy Methods (for backward compatibility) ============
+  // These methods map old journal_items API to new media_items schema
+  // Can be removed once all calling code is migrated
+
+  /**
+   * @deprecated Use createMediaItem instead
+   */
+  async insertItem(item: {
+    id: string;
+    type: 'text' | 'image' | 'audio';
+    raw_path?: string;
+    clean_text: string;
+    tags: string[];
+    created_at?: number;
+    embedding?: number[];
+  }): Promise<void> {
+    const mediaItemId = await this.createMediaItem({
+      id: item.id,
+      type: item.type,
+      local_uri: item.raw_path,
+      extracted_text: item.clean_text,
     });
-    
-    return Object.entries(tagCounts)
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count);
+
+    // Create tags and attach them
+    for (const tagName of item.tags) {
+      const tag = await this.upsertTag(tagName);
+      await this.attachTagToItem(mediaItemId, tag.id, null, 'user');
+    }
+
+    // Store embedding in metadata_json if provided
+    if (item.embedding) {
+      await this.updateMediaItem(mediaItemId, {
+        metadata_json: JSON.stringify({ embedding: item.embedding }),
+      });
+    }
   }
 
+  /**
+   * @deprecated Use listMediaItems instead
+   */
+  async queryAllItems(): Promise<
+    Array<{
+      id: string;
+      type: 'text' | 'image' | 'audio';
+      raw_path?: string;
+      clean_text: string;
+      tags: string[];
+      created_at: number;
+      embedding?: number[];
+    }>
+  > {
+    const items = await this.listMediaItems({
+      orderBy: 'created_at',
+      orderDirection: 'DESC',
+    });
+
+    const results = [];
+    for (const item of items) {
+      const tags = await this.getTagsForItem(item.id);
+      let embedding: number[] | undefined;
+
+      if (item.metadata_json) {
+        try {
+          const metadata = JSON.parse(item.metadata_json);
+          embedding = metadata.embedding;
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+
+      results.push({
+        id: item.id,
+        type: item.type as 'text' | 'image' | 'audio',
+        raw_path: item.local_uri ?? undefined,
+        clean_text: item.extracted_text || item.notes || '',
+        tags: tags.map(t => t.name),
+        created_at: item.created_at,
+        embedding,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * @deprecated Use listMediaItems with tag filter instead
+   */
+  async queryByTag(tag: string): Promise<
+    Array<{
+      id: string;
+      type: 'text' | 'image' | 'audio';
+      raw_path?: string;
+      clean_text: string;
+      tags: string[];
+      created_at: number;
+      embedding?: number[];
+    }>
+  > {
+    const items = await this.listMediaItems({
+      tags: [tag],
+      orderBy: 'created_at',
+      orderDirection: 'DESC',
+    });
+
+    const results = [];
+    for (const item of items) {
+      const tags = await this.getTagsForItem(item.id);
+      let embedding: number[] | undefined;
+
+      if (item.metadata_json) {
+        try {
+          const metadata = JSON.parse(item.metadata_json);
+          embedding = metadata.embedding;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      results.push({
+        id: item.id,
+        type: item.type as 'text' | 'image' | 'audio',
+        raw_path: item.local_uri ?? undefined,
+        clean_text: item.extracted_text || item.notes || '',
+        tags: tags.map(t => t.name),
+        created_at: item.created_at,
+        embedding,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * @deprecated Use getMediaItem instead
+   */
+  async getItem(id: string): Promise<{
+    id: string;
+    type: 'text' | 'image' | 'audio';
+    raw_path?: string;
+    clean_text: string;
+    tags: string[];
+    created_at: number;
+    embedding?: number[];
+  } | null> {
+    const item = await this.getMediaItem(id);
+    if (!item) return null;
+
+    let embedding: number[] | undefined;
+    if (item.metadata_json) {
+      try {
+        const metadata = JSON.parse(item.metadata_json);
+        embedding = metadata.embedding;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    return {
+      id: item.id,
+      type: item.type as 'text' | 'image' | 'audio',
+      raw_path: item.local_uri ?? undefined,
+      clean_text: item.extracted_text || item.notes || '',
+      tags: item.tags.map(t => t.name),
+      created_at: item.created_at,
+      embedding,
+    };
+  }
+
+  /**
+   * @deprecated Use updateMediaItem with metadata_json instead
+   */
+  async updateItemEmbedding(id: string, embedding: number[]): Promise<void> {
+    const item = await this.getMediaItem(id);
+    let metadata: any = {};
+
+    if (item?.metadata_json) {
+      try {
+        metadata = JSON.parse(item.metadata_json);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    metadata.embedding = embedding;
+    await this.updateMediaItem(id, {
+      metadata_json: JSON.stringify(metadata),
+    });
+  }
+
+  /**
+   * @deprecated Use listTags instead
+   */
+  async getAllTags(): Promise<{ tag: string; count: number }[]> {
+    const tags = await this.listTags();
+    return tags.map(t => ({ tag: t.name, count: t.usage_count }));
+  }
+
+  /**
+   * @deprecated Use listTags with limit instead
+   */
   async getTopTags(limit: number = 10): Promise<string[]> {
-    const tags = await this.getAllTags();
-    return tags.slice(0, limit).map(t => t.tag);
+    const tags = await this.listTags({ sortBy: 'count', limit });
+    return tags.map(t => t.name);
   }
 
+  /**
+   * @deprecated This is app-level logic, not database logic
+   */
   async getAverageEmbedding(): Promise<number[] | null> {
     const items = await this.queryAllItems();
     const embeddings = items.filter(item => item.embedding).map(item => item.embedding!);
-    
+
     if (embeddings.length === 0) return null;
-    
+
     const dimensions = embeddings[0].length;
     const avgEmbedding = new Array(dimensions).fill(0);
-    
+
     embeddings.forEach(embedding => {
       embedding.forEach((value, index) => {
         avgEmbedding[index] += value;
       });
     });
-    
+
     return avgEmbedding.map(sum => sum / embeddings.length);
   }
 }

@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { format } from 'date-fns';
 import { JournalItem, db } from '@/lib/storage/db';
+import { useJournalStore } from '@/lib/store';
 import { theme } from '@/lib/theme';
 
 export default function ItemScreen() {
