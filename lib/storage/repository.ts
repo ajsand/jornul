@@ -8,18 +8,22 @@ import {
   CompareSession,
   CompareSessionWithItems,
   JournalEntry,
+  IngestItem,
   CreateMediaItemInput,
   UpdateMediaItemInput,
   CreateSwipeSignalInput,
   CreateCompareSessionInput,
   CreateJournalEntryInput,
   UpdateJournalEntryInput,
+  CreateIngestItemInput,
+  UpdateIngestItemInput,
   ListMediaItemsFilters,
   ListTagsOptions,
   ListSwipeSignalsFilters,
   ListCompareSessionsFilters,
   TagSource,
   ShareLevel,
+  IngestStatus,
 } from './types';
 
 // ============ Media Items ============
@@ -600,5 +604,100 @@ export async function listCompareSessions(
 
   return await db.getAllAsync<CompareSession>(query, params);
 }
+
+// ============ Ingest Queue ============
+
+export async function createIngestItem(
+  db: SQLite.SQLiteDatabase,
+  input: CreateIngestItemInput
+): Promise<string> {
+  await db.runAsync(
+    `INSERT INTO ingest_queue
+     (id, source_type, raw_content, file_uri, status, created_at)
+     VALUES (?, ?, ?, ?, 'pending', ?)`,
+    [
+      input.id,
+      input.source_type,
+      input.raw_content ?? null,
+      input.file_uri ?? null,
+      Date.now(),
+    ]
+  );
+  return input.id;
+}
+
+export async function getIngestItem(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<IngestItem | null> {
+  return await db.getFirstAsync<IngestItem>(
+    'SELECT * FROM ingest_queue WHERE id = ?',
+    [id]
+  );
+}
+
+export async function updateIngestItem(
+  db: SQLite.SQLiteDatabase,
+  id: string,
+  updates: UpdateIngestItemInput
+): Promise<boolean> {
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.status !== undefined) {
+    fields.push('status = ?');
+    values.push(updates.status);
+  }
+  if (updates.error_message !== undefined) {
+    fields.push('error_message = ?');
+    values.push(updates.error_message);
+  }
+  if (updates.media_item_id !== undefined) {
+    fields.push('media_item_id = ?');
+    values.push(updates.media_item_id);
+  }
+  if (updates.processed_at !== undefined) {
+    fields.push('processed_at = ?');
+    values.push(updates.processed_at);
+  }
+
+  if (fields.length === 0) return false;
+
+  values.push(id);
+
+  const result = await db.runAsync(
+    `UPDATE ingest_queue SET ${fields.join(', ')} WHERE id = ?`,
+    values
+  );
+
+  return result.changes > 0;
+}
+
+export async function listIngestItems(
+  db: SQLite.SQLiteDatabase,
+  status?: IngestStatus
+): Promise<IngestItem[]> {
+  let query = 'SELECT * FROM ingest_queue';
+  const params: any[] = [];
+
+  if (status) {
+    query += ' WHERE status = ?';
+    params.push(status);
+  }
+
+  query += ' ORDER BY created_at DESC';
+
+  return await db.getAllAsync<IngestItem>(query, params);
+}
+
+export async function deleteIngestItem(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<boolean> {
+  const result = await db.runAsync('DELETE FROM ingest_queue WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
+
 
 

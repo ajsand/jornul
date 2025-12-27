@@ -10,18 +10,22 @@ import type {
   CompareSession,
   CompareSessionWithItems,
   JournalEntry,
+  IngestItem,
   CreateMediaItemInput,
   UpdateMediaItemInput,
   CreateSwipeSignalInput,
   CreateCompareSessionInput,
   CreateJournalEntryInput,
   UpdateJournalEntryInput,
+  CreateIngestItemInput,
+  UpdateIngestItemInput,
   ListMediaItemsFilters,
   ListTagsOptions,
   ListSwipeSignalsFilters,
   ListCompareSessionsFilters,
   TagSource,
   ShareLevel,
+  IngestStatus,
 } from './types';
 
 // Legacy type for backward compatibility
@@ -182,6 +186,36 @@ class Database {
     filters?: ListCompareSessionsFilters
   ): Promise<CompareSession[]> {
     return repo.listCompareSessions(this.ensureDb(), filters);
+  }
+
+  // ============ Ingest Queue ============
+
+  async createIngestItem(input: CreateIngestItemInput): Promise<string> {
+    return repo.createIngestItem(this.ensureDb(), input);
+  }
+
+  async getIngestItem(id: string): Promise<IngestItem | null> {
+    return repo.getIngestItem(this.ensureDb(), id);
+  }
+
+  async updateIngestItem(id: string, updates: UpdateIngestItemInput): Promise<boolean> {
+    return repo.updateIngestItem(this.ensureDb(), id, updates);
+  }
+
+  async listIngestItems(status?: IngestStatus): Promise<IngestItem[]> {
+    return repo.listIngestItems(this.ensureDb(), status);
+  }
+
+  async deleteIngestItem(id: string): Promise<boolean> {
+    return repo.deleteIngestItem(this.ensureDb(), id);
+  }
+
+  /**
+   * Get raw database instance for direct SQL queries
+   * Use sparingly - prefer using the repository methods above
+   */
+  getRawDb(): SQLite.SQLiteDatabase {
+    return this.ensureDb();
   }
 
   // ============ User Metadata (legacy, for app preferences) ============

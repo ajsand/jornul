@@ -270,7 +270,7 @@ export default function SyncScreen() {
                     </Text>
                   </View>
                   <Text style={styles.sectionDescription}>
-                    Use QR codes when Bluetooth isn't available
+                    Use QR codes when Bluetooth isn&apos;t available
                   </Text>
                   <Button
                     mode="outlined"

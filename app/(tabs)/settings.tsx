@@ -1,19 +1,62 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Appbar, Text, Switch, List, Card } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { Appbar, Text, Switch, List, Card, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSettingsStore } from '@/lib/store';
 import { theme } from '@/lib/theme';
+import { db } from '@/lib/storage/db';
+
+interface HealthStats {
+  dbStatus: string;
+  mediaItemCount: number;
+  tagCount: number;
+  entryCount: number;
+}
 
 export default function SettingsScreen() {
-  const { 
-    darkMode, 
-    bleEnabled, 
-    qrFallback, 
-    setDarkMode, 
-    setBleEnabled, 
-    setQrFallback 
+  const {
+    darkMode,
+    bleEnabled,
+    qrFallback,
+    setDarkMode,
+    setBleEnabled,
+    setQrFallback
   } = useSettingsStore();
+
+  const [healthStats, setHealthStats] = useState<HealthStats>({
+    dbStatus: 'Checking...',
+    mediaItemCount: 0,
+    tagCount: 0,
+    entryCount: 0,
+  });
+
+  const loadHealthStats = async () => {
+    try {
+      const items = await db.listMediaItems();
+      const tags = await db.listTags();
+      // For entries, we'll count journal_entries table if needed
+      // For now, just use media items as a proxy
+      setHealthStats({
+        dbStatus: 'Connected',
+        mediaItemCount: items.length,
+        tagCount: tags.length,
+        entryCount: items.length, // Could be different if journal_entries is separate
+      });
+    } catch (error) {
+      setHealthStats({
+        dbStatus: 'Error: ' + (error as Error).message,
+        mediaItemCount: 0,
+        tagCount: 0,
+        entryCount: 0,
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadHealthStats();
+  }, []);
+
+  const buildMode = __DEV__ ? 'Development' : 'Production';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -21,7 +64,7 @@ export default function SettingsScreen() {
         <Appbar.Content title="Settings" titleStyle={styles.headerTitle} />
       </Appbar.Header>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content}>
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>
@@ -113,6 +156,41 @@ export default function SettingsScreen() {
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>
+              App Health (Debug)
+            </Text>
+            <List.Item
+              title="Database Status"
+              description={healthStats.dbStatus}
+              left={(props) => <List.Icon {...props} icon="database" />}
+            />
+            <List.Item
+              title="Media Items"
+              description={`${healthStats.mediaItemCount} items in library`}
+              left={(props) => <List.Icon {...props} icon="file-multiple" />}
+            />
+            <List.Item
+              title="Tags"
+              description={`${healthStats.tagCount} unique tags`}
+              left={(props) => <List.Icon {...props} icon="tag-multiple" />}
+            />
+            <List.Item
+              title="Build Mode"
+              description={buildMode}
+              left={(props) => <List.Icon {...props} icon="cog" />}
+            />
+            <Button
+              mode="outlined"
+              onPress={loadHealthStats}
+              style={{ marginTop: 8 }}
+            >
+              Refresh Stats
+            </Button>
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleLarge" style={styles.sectionTitle}>
               Future Features
             </Text>
             <List.Item
@@ -135,7 +213,7 @@ export default function SettingsScreen() {
             />
           </Card.Content>
         </Card>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

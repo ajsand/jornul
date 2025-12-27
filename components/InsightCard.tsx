@@ -31,7 +31,7 @@ export function InsightCard({ result, deviceName = 'Another User' }: InsightCard
             </View>
           ) : (
             <Text style={styles.noSharedText}>
-              No shared tags found, but that's okay - you might discover new interests!
+              No shared tags found, but that&apos;s okay - you might discover new interests!
             </Text>
           )}
         </View>

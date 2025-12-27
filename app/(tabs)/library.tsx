@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { Appbar, Text, Searchbar, Menu, IconButton } from 'react-native-paper';
+import { Appbar, Text, Searchbar, Menu, IconButton, Chip } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ArrowUpDown } from 'lucide-react-native';
@@ -13,11 +13,34 @@ type SortOrder = 'newest' | 'oldest';
 
 export default function LibraryScreen() {
   const [items, setItems] = useState<MediaItem[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+
+  const loadItems = useCallback(async () => {
+    try {
+      const result = await db.listMediaItems({
+        searchText: searchQuery || undefined,
+        orderBy: 'created_at',
+        orderDirection: sortOrder === 'newest' ? 'DESC' : 'ASC',
+      });
+      setItems(result);
+
+      // Check for pending ingest items
+      const pending = await db.listIngestItems();
+      const pendingOrProcessing = pending.filter(
+        item => item.status === 'pending' || item.status === 'processing'
+      );
+      setPendingCount(pendingOrProcessing.length);
+    } catch (error) {
+      console.error('Failed to load items:', error);
+      setItems([]);
+      setPendingCount(0);
+    }
+  }, [searchQuery, sortOrder]);
 
   useEffect(() => {
     initializeDatabase();
@@ -28,20 +51,6 @@ export default function LibraryScreen() {
       loadItems();
     }
   }, [loading, loadItems]);
-
-  const loadItems = useCallback(async () => {
-    try {
-      const result = await db.listMediaItems({
-        searchText: searchQuery || undefined,
-        orderBy: 'created_at',
-        orderDirection: sortOrder === 'newest' ? 'DESC' : 'ASC',
-      });
-      setItems(result);
-    } catch (error) {
-      console.error('Failed to load items:', error);
-      setItems([]);
-    }
-  }, [searchQuery, sortOrder]);
 
   const initializeDatabase = async () => {
     try {
@@ -122,6 +131,18 @@ export default function LibraryScreen() {
         />
       </View>
 
+      {pendingCount > 0 && (
+        <View style={styles.statusBanner}>
+          <Chip
+            icon="clock-outline"
+            style={styles.statusChip}
+            textStyle={styles.statusText}
+          >
+            {pendingCount} item{pendingCount > 1 ? 's' : ''} processing...
+          </Chip>
+        </View>
+      )}
+
       {items.length === 0 ? (
         <View style={styles.emptyContainer}>
           {searchQuery ? (
@@ -130,7 +151,7 @@ export default function LibraryScreen() {
                 No results found
               </Text>
               <Text style={styles.emptyText}>
-                No items match "{searchQuery}"
+                No items match &quot;{searchQuery}&quot;
               </Text>
               <IconButton
                 icon="close"
@@ -211,6 +232,21 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     marginTop: 16,
+  },
+  statusBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+    alignItems: 'center',
+  },
+  statusChip: {
+    backgroundColor: theme.colors.secondaryContainer,
+  },
+  statusText: {
+    color: theme.colors.onSecondaryContainer,
+    fontSize: 12,
   },
 });
 

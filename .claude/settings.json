@@ -1,0 +1,10 @@
+{
+    "permissions": {
+      "defaultMode": "plan",
+      "deny": [
+        "Read(**/.env*)",
+        "Read(**/*secret*)",
+        "Read(**/*key*)"
+      ]
+    }
+  }

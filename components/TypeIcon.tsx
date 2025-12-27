@@ -28,3 +28,5 @@ export function TypeIcon({ type, size = 24, color = '#666' }: TypeIconProps) {
 }
 
 
+
+

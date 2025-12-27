@@ -301,7 +301,7 @@ export default function ItemScreen() {
               {displayTags.length > 0 ? (
                 <View style={styles.tagsContainer}>
                   {isLegacyItem ? (
-                    displayTags.map((tag, index) => (
+                    (displayTags as string[]).map((tag, index) => (
                       <Chip
                         key={index}
                         style={styles.tag}
@@ -312,7 +312,7 @@ export default function ItemScreen() {
                       </Chip>
                     ))
                   ) : (
-                    (displayTags as Array<{id: number; name: string}>).map((tag) => (
+                    (displayTags as {id: number; name: string}[]).map((tag) => (
                       <Chip
                         key={tag.id}
                         style={styles.tag}

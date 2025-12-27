@@ -1,103 +1,158 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Alert, ScrollView } from 'react-native';
-import { Appbar, TextInput, Button, Card, Text, Chip } from 'react-native-paper';
+import { View, StyleSheet, Alert, ScrollView, Clipboard } from 'react-native';
+import { Appbar, TextInput, Button, Card, Text, Chip, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { v4 as uuidv4 } from 'uuid';
-import { Camera, Mic } from 'lucide-react-native';
-import { useJournalStore } from '@/lib/store';
+import * as DocumentPicker from 'expo-document-picker';
+import { Clipboard as ClipboardIcon, FileUp } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
-import { embed } from '@/lib/ai/embeddings';
+import { processIngestItem } from '@/lib/ingest/processor';
 import { theme } from '@/lib/theme';
 
 export default function NewItemScreen() {
-  const { addItem } = useJournalStore();
   const [text, setText] = useState('');
-  const [tags, setTags] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<{ name: string; uri: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const handlePaste = async () => {
+    try {
+      const clipboardContent = await Clipboard.getString();
+      if (clipboardContent) {
+        setText(clipboardContent);
+      } else {
+        Alert.alert('Clipboard Empty', 'No text found in clipboard');
+      }
+    } catch (error) {
+      console.error('Failed to paste from clipboard:', error);
+      Alert.alert('Error', 'Failed to paste from clipboard');
+    }
+  };
+
+  const handlePickFiles = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*', 'application/pdf', 'audio/*', 'video/*'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      // Handle both single and multiple file selection
+      const files = result.assets || [];
+      const newFiles = files.map(asset => ({
+        name: asset.name,
+        uri: asset.uri,
+      }));
+
+      setSelectedFiles(prev => [...prev, ...newFiles]);
+    } catch (error) {
+      console.error('Error picking files:', error);
+      Alert.alert('Error', 'Failed to pick files. Please try again.');
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async () => {
-    if (!text.trim()) {
-      Alert.alert('Error', 'Please enter some text for your journal entry.');
+    if (!text.trim() && selectedFiles.length === 0) {
+      Alert.alert('Error', 'Please add some text or files to save.');
       return;
     }
 
     setLoading(true);
     try {
-      const id = uuidv4();
-      const tagArray = tags
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0);
+      await db.init();
+      const ingestIds: string[] = [];
 
-      // Create the journal item
-      const item = {
-        id,
-        type: 'text' as const,
-        clean_text: text.trim(),
-        tags: tagArray,
-        created_at: Date.now(),
-      };
+      // Create ingest item for text/URL if provided
+      if (text.trim()) {
+        const ingestId = uuidv4();
+        await db.createIngestItem({
+          id: ingestId,
+          source_type: 'text',
+          raw_content: text.trim(),
+        });
+        ingestIds.push(ingestId);
+      }
 
-      // Try to save to database, but continue even if it fails
-      try {
-        await db.init();
-        await db.insertItem(item);
+      // Create ingest items for each file
+      for (const file of selectedFiles) {
+        const ingestId = uuidv4();
+        await db.createIngestItem({
+          id: ingestId,
+          source_type: 'file',
+          file_uri: file.uri,
+        });
+        ingestIds.push(ingestId);
+      }
 
-        // Compute and save embedding if text is suitable
-        if (text.length <= 1024) {
-          const embedding = embed(text);
-          await db.updateItemEmbedding(id, embedding);
-          item.embedding = embedding;
+      // Process all ingest items in background
+      // In a production app, this would be done by a background task
+      setTimeout(async () => {
+        for (const ingestId of ingestIds) {
+          try {
+            await processIngestItem(ingestId);
+          } catch (error) {
+            console.error(`Failed to process ingest item ${ingestId}:`, error);
+          }
         }
-      } catch (dbError) {
-        console.warn('Database save failed, continuing with in-memory storage:', dbError);
-      }
+      }, 100);
 
-      // Add to store
-      addItem(item);
+      // Show success message
+      const itemCount = ingestIds.length;
+      Alert.alert(
+        'Success',
+        `Added ${itemCount} item${itemCount > 1 ? 's' : ''} to your library. Processing in background...`,
+        [{ text: 'OK', onPress: () => router.push('/(tabs)/library') }]
+      );
 
-      // Navigate back
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)/');
-      }
+      // Clear form
+      setText('');
+      setSelectedFiles([]);
     } catch (error) {
-      console.error('Failed to save journal entry:', error);
-      Alert.alert('Error', 'Failed to save your journal entry. Please try again.');
+      console.error('Failed to save items:', error);
+      Alert.alert('Error', 'Failed to save your items. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleComingSoon = (feature: string) => {
-    Alert.alert('Coming Soon', `${feature} support will be available in a future update.`);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <Appbar.Header style={styles.header}>
-        <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="New Entry" titleStyle={styles.headerTitle} />
-        <Appbar.Action 
-          icon="check" 
+        <Appbar.Content title="Quick Add" titleStyle={styles.headerTitle} />
+        <Appbar.Action
+          icon="check"
           onPress={handleSave}
-          disabled={loading || !text.trim()}
+          disabled={loading || (!text.trim() && selectedFiles.length === 0)}
         />
       </Appbar.Header>
 
       <ScrollView style={styles.content}>
         <Card style={styles.card}>
           <Card.Content>
-            <Text variant="titleMedium" style={styles.sectionTitle}>
-              Text Entry
-            </Text>
+            <View style={styles.titleRow}>
+              <Text variant="titleMedium" style={styles.sectionTitle}>
+                Paste or Type
+              </Text>
+              <IconButton
+                icon={() => <ClipboardIcon size={20} color={theme.colors.primary} />}
+                onPress={handlePaste}
+                size={20}
+                mode="contained-tonal"
+              />
+            </View>
             <TextInput
               mode="outlined"
               multiline
               numberOfLines={8}
-              placeholder="What's on your mind today?"
+              placeholder="Paste a link, add some text, or start typing..."
               value={text}
               onChangeText={setText}
               style={styles.textInput}
@@ -105,82 +160,43 @@ export default function NewItemScreen() {
               outlineColor={theme.colors.outline}
               activeOutlineColor={theme.colors.primary}
             />
-
-            <Text variant="titleMedium" style={styles.sectionTitle}>
-              Tags (comma separated)
+            <Text style={styles.hint}>
+              Text or URL will be automatically detected and processed
             </Text>
-            <TextInput
-              mode="outlined"
-              placeholder="travel, food, thoughts, goals"
-              value={tags}
-              onChangeText={setTags}
-              style={styles.tagsInput}
-              outlineColor={theme.colors.outline}
-              activeOutlineColor={theme.colors.primary}
-            />
-
-            {tags.length > 0 && (
-              <View style={styles.tagsPreview}>
-                {tags
-                  .split(',')
-                  .map(tag => tag.trim())
-                  .filter(tag => tag.length > 0)
-                  .map((tag, index) => (
-                    <Chip key={index} style={styles.tagChip} textStyle={styles.tagText} compact>
-                      {tag}
-                    </Chip>
-                  ))}
-              </View>
-            )}
           </Card.Content>
         </Card>
 
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>
-              Import Files
+              Add Files
             </Text>
             <Text style={styles.sectionDescription}>
-              Import multiple files at once (images, documents, audio, video)
+              Images, PDFs, audio, and video files
             </Text>
             <Button
-              mode="contained"
-              onPress={() => router.push('/import')}
-              style={styles.importButton}
-              icon="file-upload"
+              mode="outlined"
+              onPress={handlePickFiles}
+              style={styles.fileButton}
+              icon={() => <FileUp size={20} color={theme.colors.primary} />}
             >
-              Import Files
+              Pick Files
             </Button>
-          </Card.Content>
-        </Card>
 
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text variant="titleMedium" style={styles.sectionTitle}>
-              Media (Coming Soon)
-            </Text>
-            <View style={styles.mediaButtons}>
-              <Button
-                mode="outlined"
-                icon={() => <Camera size={20} color={theme.colors.outline} />}
-                onPress={() => handleComingSoon('Image')}
-                style={styles.mediaButton}
-                textColor={theme.colors.outline}
-                disabled
-              >
-                Add Image
-              </Button>
-              <Button
-                mode="outlined"
-                icon={() => <Mic size={20} color={theme.colors.outline} />}
-                onPress={() => handleComingSoon('Audio')}
-                style={styles.mediaButton}
-                textColor={theme.colors.outline}
-                disabled
-              >
-                Add Audio
-              </Button>
-            </View>
+            {selectedFiles.length > 0 && (
+              <View style={styles.filesPreview}>
+                {selectedFiles.map((file, index) => (
+                  <Chip
+                    key={index}
+                    style={styles.fileChip}
+                    textStyle={styles.fileText}
+                    onClose={() => handleRemoveFile(index)}
+                  >
+                    {file.name}
+                  </Chip>
+                ))}
+              </View>
+            )}
           </Card.Content>
         </Card>
 
@@ -188,11 +204,16 @@ export default function NewItemScreen() {
           mode="contained"
           onPress={handleSave}
           loading={loading}
-          disabled={loading || !text.trim()}
+          disabled={loading || (!text.trim() && selectedFiles.length === 0)}
           style={styles.saveButton}
         >
-          Save Entry
+          {loading ? 'Saving...' : 'Save to Library'}
         </Button>
+
+        <Text style={styles.footer}>
+          Items will be processed automatically after saving.
+          You can continue using the app while processing happens in the background.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -217,9 +238,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: theme.colors.surface,
   },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   sectionTitle: {
     color: theme.colors.onSurface,
-    marginBottom: 12,
     fontWeight: '500',
   },
   sectionDescription: {
@@ -227,39 +253,43 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 14,
   },
-  importButton: {
-    marginTop: 8,
-  },
   textInput: {
-    marginBottom: 16,
+    marginBottom: 8,
     backgroundColor: theme.colors.background,
     minHeight: 120,
   },
-  tagsInput: {
-    marginBottom: 12,
-    backgroundColor: theme.colors.background,
+  hint: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    fontStyle: 'italic',
   },
-  tagsPreview: {
+  fileButton: {
+    marginTop: 8,
+    borderColor: theme.colors.primary,
+  },
+  filesPreview: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
+    marginTop: 16,
   },
-  tagChip: {
+  fileChip: {
     backgroundColor: theme.colors.primaryContainer,
   },
-  tagText: {
+  fileText: {
     color: theme.colors.onPrimaryContainer,
-  },
-  mediaButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  mediaButton: {
-    flex: 1,
-    borderColor: theme.colors.outline,
+    fontSize: 12,
   },
   saveButton: {
     marginTop: 8,
-    marginBottom: 32,
+    marginBottom: 16,
+  },
+  footer: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    lineHeight: 18,
   },
 });

@@ -134,7 +134,7 @@ export default function ImportScreen() {
         // Create metadata
         const metadata = {
           originalFilename: item.filename,
-          mimeType: mimeType || 'application/octet-stream',
+          mimeType: item.mimeType || 'application/octet-stream',
           size: item.size || 0,
           importedAt: Date.now(),
         };

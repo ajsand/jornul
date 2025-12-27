@@ -110,6 +110,24 @@ const migrations: { [version: number]: string } = {
       value TEXT NOT NULL
     );
   `,
+  2: `
+    -- Ingest queue for Quick Add feature
+    CREATE TABLE IF NOT EXISTS ingest_queue (
+      id TEXT PRIMARY KEY,
+      source_type TEXT NOT NULL CHECK(source_type IN ('text', 'url', 'file')),
+      raw_content TEXT,
+      file_uri TEXT,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'processing', 'ready', 'failed')) DEFAULT 'pending',
+      error_message TEXT,
+      media_item_id TEXT,
+      created_at INTEGER NOT NULL,
+      processed_at INTEGER,
+      FOREIGN KEY (media_item_id) REFERENCES media_items(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ingest_queue_status ON ingest_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_ingest_queue_created_at ON ingest_queue(created_at);
+  `,
 };
 
 /**

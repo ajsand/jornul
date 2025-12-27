@@ -182,4 +182,37 @@ export interface ListCompareSessionsFilters {
   offset?: number;
 }
 
+// ============ Ingest Queue (Quick Add) ============
+
+export type IngestStatus = 'pending' | 'processing' | 'ready' | 'failed';
+export type IngestSourceType = 'text' | 'url' | 'file';
+
+export interface IngestItem {
+  id: string;
+  source_type: IngestSourceType;
+  raw_content: string | null;
+  file_uri: string | null;
+  status: IngestStatus;
+  error_message: string | null;
+  media_item_id: string | null;
+  created_at: number;
+  processed_at: number | null;
+}
+
+export interface CreateIngestItemInput {
+  id: string;
+  source_type: IngestSourceType;
+  raw_content?: string | null;
+  file_uri?: string | null;
+}
+
+export interface UpdateIngestItemInput {
+  status?: IngestStatus;
+  error_message?: string | null;
+  media_item_id?: string | null;
+  processed_at?: number | null;
+}
+
+
+
 
