@@ -116,7 +116,7 @@ export default function HomeScreen() {
       <FAB
         icon={() => <Plus size={24} color={theme.colors.onPrimary} />}
         style={styles.fab}
-        onPress={() => router.push('/newitem')}
+        onPress={() => router.push('/(tabs)/scratch')}
       />
     </SafeAreaView>
   );
