@@ -7,7 +7,11 @@
       "Skill(it08)",
       "Bash(mkdir:*)",
       "Bash(npx expo lint:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Skill(it07)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
