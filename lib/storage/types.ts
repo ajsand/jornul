@@ -1,12 +1,17 @@
 // Type definitions for JournalLink data layer
+// All DB models are defined here for single source of truth
 
 // ============ Enums ============
 
 export type MediaType = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'url';
 export type TagSource = 'heuristic' | 'ml' | 'user';
+export type TagKind = 'emergent' | 'manual' | 'system';
 export type SwipeDirection = 'like' | 'dislike';
+export type SwipeDecision = 'like' | 'dislike' | 'skip' | 'super_like';
 export type CompareMode = 'friend' | 'heart';
 export type ShareLevel = 'title' | 'snippet' | 'full';
+export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+export type ProcessingStatus = 'pending' | 'processing' | 'done' | 'failed' | 'skipped';
 
 // ============ Table Row Types ============
 
@@ -26,7 +31,10 @@ export interface MediaItem {
 export interface Tag {
   id: number;
   name: string;
+  slug: string | null;
+  kind: TagKind;
   created_at: number;
+  updated_at: number | null;
 }
 
 export interface ItemTag {
@@ -211,6 +219,223 @@ export interface UpdateIngestItemInput {
   error_message?: string | null;
   media_item_id?: string | null;
   processed_at?: number | null;
+}
+
+// ============ Media Meta (v3) ============
+
+export interface MediaMeta {
+  item_id: string;
+  duration_ms: number | null;
+  width: number | null;
+  height: number | null;
+  exif_json: string | null;
+  ocr_status: ProcessingStatus | null;
+  asr_status: ProcessingStatus | null;
+  source_domain: string | null;
+  extra_json: string | null;
+}
+
+export interface CreateMediaMetaInput {
+  item_id: string;
+  duration_ms?: number | null;
+  width?: number | null;
+  height?: number | null;
+  exif_json?: string | null;
+  ocr_status?: ProcessingStatus | null;
+  asr_status?: ProcessingStatus | null;
+  source_domain?: string | null;
+  extra_json?: string | null;
+}
+
+export interface UpdateMediaMetaInput {
+  duration_ms?: number | null;
+  width?: number | null;
+  height?: number | null;
+  exif_json?: string | null;
+  ocr_status?: ProcessingStatus | null;
+  asr_status?: ProcessingStatus | null;
+  source_domain?: string | null;
+  extra_json?: string | null;
+}
+
+// ============ Jobs (v3) ============
+
+export interface Job {
+  id: string;
+  kind: string;
+  status: JobStatus;
+  payload_json: string | null;
+  progress: number;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateJobInput {
+  id: string;
+  kind: string;
+  payload_json?: string | null;
+}
+
+export interface UpdateJobInput {
+  status?: JobStatus;
+  payload_json?: string | null;
+  progress?: number;
+  error?: string | null;
+}
+
+export interface ListJobsFilters {
+  kind?: string;
+  status?: JobStatus;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Swipe Media (v3) ============
+
+export interface SwipeMedia {
+  id: string;
+  title: string;
+  type: string;
+  image_url: string | null;
+  short_desc: string | null;
+  long_desc: string | null;
+  source: string | null;
+  tags_json: string | null;
+  popularity_score: number;
+  created_at: number;
+}
+
+export interface CreateSwipeMediaInput {
+  id: string;
+  title: string;
+  type: string;
+  image_url?: string | null;
+  short_desc?: string | null;
+  long_desc?: string | null;
+  source?: string | null;
+  tags_json?: string | null;
+  popularity_score?: number;
+}
+
+export interface UpdateSwipeMediaInput {
+  title?: string;
+  type?: string;
+  image_url?: string | null;
+  short_desc?: string | null;
+  long_desc?: string | null;
+  source?: string | null;
+  tags_json?: string | null;
+  popularity_score?: number;
+}
+
+export interface ListSwipeMediaFilters {
+  type?: string;
+  source?: string;
+  minPopularity?: number;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Swipe Sessions (v3) ============
+
+export interface SwipeSession {
+  id: string;
+  started_at: number;
+  ended_at: number | null;
+  filters_json: string | null;
+}
+
+export interface CreateSwipeSessionInput {
+  id: string;
+  filters_json?: string | null;
+}
+
+export interface UpdateSwipeSessionInput {
+  ended_at?: number | null;
+  filters_json?: string | null;
+}
+
+// ============ Swipe Events (v3) ============
+
+export interface SwipeEvent {
+  id: string;
+  session_id: string;
+  media_id: string;
+  decision: SwipeDecision;
+  strength: number;
+  created_at: number;
+}
+
+export interface CreateSwipeEventInput {
+  id: string;
+  session_id: string;
+  media_id: string;
+  decision: SwipeDecision;
+  strength?: number;
+}
+
+export interface ListSwipeEventsFilters {
+  session_id?: string;
+  media_id?: string;
+  decision?: SwipeDecision;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Session Ledger (v3) ============
+
+export interface SessionLedger {
+  id: string;
+  started_at: number;
+  mode: string;
+  provider: string | null;
+  excerpt_counts_json: string | null;
+  sensitive_included: number;
+  token_estimate: number | null;
+  cost_estimate_cents: number | null;
+  ended_at: number | null;
+  result_json: string | null;
+}
+
+export interface CreateSessionLedgerInput {
+  id: string;
+  mode: string;
+  provider?: string | null;
+  excerpt_counts_json?: string | null;
+  sensitive_included?: boolean;
+  token_estimate?: number | null;
+  cost_estimate_cents?: number | null;
+}
+
+export interface UpdateSessionLedgerInput {
+  ended_at?: number | null;
+  result_json?: string | null;
+  token_estimate?: number | null;
+  cost_estimate_cents?: number | null;
+}
+
+export interface ListSessionLedgerFilters {
+  mode?: string;
+  provider?: string;
+  dateFrom?: number;
+  dateTo?: number;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Enhanced Tag Types (v3) ============
+
+export interface CreateTagInput {
+  name: string;
+  slug?: string | null;
+  kind?: TagKind;
+}
+
+export interface UpdateTagInput {
+  name?: string;
+  slug?: string | null;
+  kind?: TagKind;
 }
 
 

@@ -128,6 +128,111 @@ const migrations: { [version: number]: string } = {
     CREATE INDEX IF NOT EXISTS idx_ingest_queue_status ON ingest_queue(status);
     CREATE INDEX IF NOT EXISTS idx_ingest_queue_created_at ON ingest_queue(created_at);
   `,
+  3: `
+    -- Enhanced media metadata for richer item info
+    CREATE TABLE IF NOT EXISTS media_meta (
+      item_id TEXT PRIMARY KEY,
+      duration_ms INTEGER,
+      width INTEGER,
+      height INTEGER,
+      exif_json TEXT,
+      ocr_status TEXT CHECK(ocr_status IS NULL OR ocr_status IN ('pending', 'processing', 'done', 'failed', 'skipped')),
+      asr_status TEXT CHECK(asr_status IS NULL OR asr_status IN ('pending', 'processing', 'done', 'failed', 'skipped')),
+      source_domain TEXT,
+      extra_json TEXT,
+      FOREIGN KEY (item_id) REFERENCES media_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_media_meta_ocr_status ON media_meta(ocr_status);
+    CREATE INDEX IF NOT EXISTS idx_media_meta_asr_status ON media_meta(asr_status);
+    CREATE INDEX IF NOT EXISTS idx_media_meta_source_domain ON media_meta(source_domain);
+
+    -- Enhanced tags with kind field for emergent/manual/system distinction
+    ALTER TABLE tags ADD COLUMN slug TEXT;
+    ALTER TABLE tags ADD COLUMN kind TEXT DEFAULT 'manual' CHECK(kind IN ('emergent', 'manual', 'system'));
+    ALTER TABLE tags ADD COLUMN updated_at INTEGER;
+
+    -- Create unique index on slug after adding column
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_slug ON tags(slug);
+
+    -- Jobs table for background processing queue
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'done', 'failed', 'cancelled')),
+      payload_json TEXT,
+      progress REAL DEFAULT 0 CHECK(progress >= 0 AND progress <= 1),
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_kind ON jobs(kind);
+    CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+
+    -- Swipe media catalog (external content for swipe deck)
+    CREATE TABLE IF NOT EXISTS swipe_media (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL,
+      image_url TEXT,
+      short_desc TEXT,
+      long_desc TEXT,
+      source TEXT,
+      tags_json TEXT,
+      popularity_score REAL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_swipe_media_type ON swipe_media(type);
+    CREATE INDEX IF NOT EXISTS idx_swipe_media_source ON swipe_media(source);
+    CREATE INDEX IF NOT EXISTS idx_swipe_media_popularity ON swipe_media(popularity_score);
+
+    -- Swipe sessions for grouping swipe events
+    CREATE TABLE IF NOT EXISTS swipe_sessions (
+      id TEXT PRIMARY KEY,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      filters_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_swipe_sessions_started_at ON swipe_sessions(started_at);
+
+    -- Swipe events (user decisions on swipe media)
+    CREATE TABLE IF NOT EXISTS swipe_events (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      media_id TEXT NOT NULL,
+      decision TEXT NOT NULL CHECK(decision IN ('like', 'dislike', 'skip', 'super_like')),
+      strength REAL DEFAULT 1.0 CHECK(strength >= 0 AND strength <= 1),
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES swipe_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (media_id) REFERENCES swipe_media(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_swipe_events_session_id ON swipe_events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_swipe_events_media_id ON swipe_events(media_id);
+    CREATE INDEX IF NOT EXISTS idx_swipe_events_decision ON swipe_events(decision);
+
+    -- Session ledger for AI/cloud session tracking
+    CREATE TABLE IF NOT EXISTS session_ledger (
+      id TEXT PRIMARY KEY,
+      started_at INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      provider TEXT,
+      excerpt_counts_json TEXT,
+      sensitive_included INTEGER DEFAULT 0,
+      token_estimate INTEGER,
+      cost_estimate_cents INTEGER,
+      ended_at INTEGER,
+      result_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_ledger_started_at ON session_ledger(started_at);
+    CREATE INDEX IF NOT EXISTS idx_session_ledger_mode ON session_ledger(mode);
+    CREATE INDEX IF NOT EXISTS idx_session_ledger_provider ON session_ledger(provider);
+  `,
 };
 
 /**

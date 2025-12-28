@@ -1,3 +1,10 @@
+/**
+ * Repository - Legacy CRUD operations
+ *
+ * NOTE: New code should use the modular repositories in ./repositories/
+ * This file is maintained for backward compatibility.
+ */
+
 import * as SQLite from 'expo-sqlite';
 import {
   MediaItem,
@@ -25,6 +32,9 @@ import {
   ShareLevel,
   IngestStatus,
 } from './types';
+
+// Re-export new modular repositories for new code
+export * from './repositories';
 
 // ============ Media Items ============
 
@@ -66,7 +76,7 @@ export async function getMediaItem(
 
   // Get associated tags
   const tags = await db.getAllAsync<any>(
-    `SELECT t.id, t.name, t.created_at, it.confidence, it.source
+    `SELECT t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at, it.confidence, it.source
      FROM tags t
      INNER JOIN item_tags it ON t.id = it.tag_id
      WHERE it.item_id = ?
@@ -79,7 +89,10 @@ export async function getMediaItem(
     tags: tags.map(t => ({
       id: t.id,
       name: t.name,
+      slug: t.slug,
+      kind: t.kind,
       created_at: t.created_at,
+      updated_at: t.updated_at,
       confidence: t.confidence,
       source: t.source,
     })),
