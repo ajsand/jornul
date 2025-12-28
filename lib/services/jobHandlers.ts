@@ -8,6 +8,7 @@ import * as repos from '@/lib/storage/repositories';
 import { Job } from '@/lib/storage/types';
 import { registerJobHandler } from './jobRunner';
 import { updateBatchJobStatus } from './massUpload';
+import { tagItem } from './aets';
 
 /**
  * Extract domain from URL
@@ -121,6 +122,15 @@ async function handleNormalizeAndTag(
     });
 
     console.log(`[NormalizeAndTag] File normalized: ${item.type}`);
+  }
+
+  // AETS: Extract and assign emergent tags
+  try {
+    const taggingResult = await tagItem(rawDb, item);
+    console.log(`[NormalizeAndTag] AETS tagged: ${taggingResult.tagsAssigned} tags assigned`);
+  } catch (error) {
+    // Log but don't fail the job if tagging fails
+    console.error(`[NormalizeAndTag] AETS tagging failed:`, error);
   }
 
   // Update batch job status if this is part of a batch

@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TextInput, Alert, Linking, KeyboardAvoidingView, Platform } from 'react-native';
-import { Appbar, Text, Chip, Card, Button, Snackbar, IconButton, Divider } from 'react-native-paper';
+import { Appbar, Text, Chip, Card, Button, Snackbar, Divider, Dialog, Portal, TextInput as PaperInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { format } from 'date-fns';
-import { ExternalLink, Calendar, Clock, FileText } from 'lucide-react-native';
+import { ExternalLink, Calendar, Clock, FileText, Plus, Tag } from 'lucide-react-native';
 import { JournalItem, db } from '@/lib/storage/db';
 import { MediaItemWithTags } from '@/lib/storage/types';
 import { useJournalStore } from '@/lib/store';
 import { getMediaTitle } from '@/lib/utils/mediaHelpers';
+import { addManualTag } from '@/lib/services/aets';
 import { TypeIcon } from '@/components/TypeIcon';
 import { theme } from '@/lib/theme';
 
@@ -23,6 +24,8 @@ export default function ItemScreen() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [addTagDialogVisible, setAddTagDialogVisible] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
 
   useEffect(() => {
     loadItem();
@@ -116,6 +119,25 @@ export default function ItemScreen() {
         },
       ]
     );
+  };
+
+  const handleAddTag = async () => {
+    if (!item || !newTagName.trim()) return;
+
+    try {
+      const rawDb = db.getRawDb();
+      await addManualTag(rawDb, item.id, newTagName.trim());
+      const updated = await db.getMediaItem(item.id);
+      if (updated) {
+        setItem(updated);
+        showSnackbar('Tag added');
+      }
+      setAddTagDialogVisible(false);
+      setNewTagName('');
+    } catch (error) {
+      console.error('Failed to add tag:', error);
+      showSnackbar((error as Error).message || 'Failed to add tag');
+    }
   };
 
   const handleNotesChange = (text: string) => {
@@ -294,10 +316,25 @@ export default function ItemScreen() {
           {/* Tags Section */}
           <Card style={styles.card}>
             <Card.Content>
-              <Text variant="titleMedium" style={styles.sectionTitle}>
-                Tags
-              </Text>
-              
+              <View style={styles.tagsSectionHeader}>
+                <View style={styles.sectionHeader}>
+                  <Tag size={20} color={theme.colors.onSurface} />
+                  <Text variant="titleMedium" style={styles.sectionTitle}>
+                    Tags
+                  </Text>
+                </View>
+                {!isLegacyItem && (
+                  <Button
+                    mode="text"
+                    compact
+                    icon={() => <Plus size={16} color={theme.colors.primary} />}
+                    onPress={() => setAddTagDialogVisible(true)}
+                  >
+                    Add
+                  </Button>
+                )}
+              </View>
+
               {displayTags.length > 0 ? (
                 <View style={styles.tagsContainer}>
                   {isLegacyItem ? (
@@ -312,10 +349,14 @@ export default function ItemScreen() {
                       </Chip>
                     ))
                   ) : (
-                    (displayTags as {id: number; name: string}[]).map((tag) => (
+                    (displayTags as {id: number; name: string; kind?: string; source?: string}[]).map((tag) => (
                       <Chip
                         key={tag.id}
-                        style={styles.tag}
+                        style={[
+                          styles.tag,
+                          tag.kind === 'emergent' && styles.emergentTag,
+                          tag.source === 'user' && styles.manualTag,
+                        ]}
                         textStyle={styles.tagText}
                         onClose={() => handleRemoveTag(tag.id, tag.name)}
                         compact
@@ -326,12 +367,39 @@ export default function ItemScreen() {
                   )}
                 </View>
               ) : (
-                <Text style={styles.emptyText}>No tags yet</Text>
+                <Text style={styles.emptyText}>No tags yet. Tags will be added automatically or you can add them manually.</Text>
               )}
             </Card.Content>
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Add Tag Dialog */}
+      <Portal>
+        <Dialog visible={addTagDialogVisible} onDismiss={() => setAddTagDialogVisible(false)}>
+          <Dialog.Title>Add Tag</Dialog.Title>
+          <Dialog.Content>
+            <PaperInput
+              label="Tag name"
+              value={newTagName}
+              onChangeText={setNewTagName}
+              mode="outlined"
+              autoFocus
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              setAddTagDialogVisible(false);
+              setNewTagName('');
+            }}>
+              Cancel
+            </Button>
+            <Button onPress={handleAddTag} disabled={!newTagName.trim()}>
+              Add
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <Snackbar
         visible={snackbarVisible}
@@ -435,6 +503,12 @@ const styles = StyleSheet.create({
   saveButton: {
     marginTop: 8,
   },
+  tagsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -442,10 +516,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   tag: {
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  emergentTag: {
+    backgroundColor: theme.colors.tertiaryContainer,
+  },
+  manualTag: {
     backgroundColor: theme.colors.primaryContainer,
   },
   tagText: {
-    color: theme.colors.onPrimaryContainer,
+    color: theme.colors.onSurfaceVariant,
   },
   emptyText: {
     color: theme.colors.onSurfaceVariant,

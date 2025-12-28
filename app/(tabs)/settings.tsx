@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Appbar, Text, Switch, List, Card, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { useSettingsStore } from '@/lib/store';
 import { theme } from '@/lib/theme';
 import { db } from '@/lib/storage/db';
@@ -156,6 +157,21 @@ export default function SettingsScreen() {
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>
+              Content Management
+            </Text>
+            <List.Item
+              title="Manage Tags"
+              description={`${healthStats.tagCount} emergent tags • Rename, merge, delete`}
+              left={(props) => <List.Icon {...props} icon="tag-multiple" />}
+              right={(props) => <List.Icon {...props} icon="chevron-right" />}
+              onPress={() => router.push('/tags')}
+            />
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleLarge" style={styles.sectionTitle}>
               App Health (Debug)
             </Text>
             <List.Item
@@ -165,7 +181,7 @@ export default function SettingsScreen() {
             />
             <List.Item
               title="Media Items"
-              description={`${healthStats.mediaItemCount} items in library`}
+              description={`${healthStats.mediaItemCount} items in vault`}
               left={(props) => <List.Icon {...props} icon="file-multiple" />}
             />
             <List.Item
