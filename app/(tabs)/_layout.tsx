@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, BookOpen, Plus, Wifi, Settings } from 'lucide-react-native';
+import { Chrome as Home, BookOpen, PenLine, Wifi, Settings } from 'lucide-react-native';
 import { theme } from '@/lib/theme';
 
 export default function TabLayout() {
@@ -33,11 +33,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="newitem"
+        name="scratch"
         options={{
-          title: 'Add',
+          title: 'Scratch',
           tabBarIcon: ({ size, color }) => (
-            <Plus size={size} color={color} />
+            <PenLine size={size} color={color} />
           ),
         }}
       />

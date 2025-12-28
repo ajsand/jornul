@@ -1,0 +1,279 @@
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
+import { Appbar, TextInput, Button, Text, HelperText } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { v4 as uuidv4 } from 'uuid';
+import * as Clipboard from 'expo-clipboard';
+import { Clipboard as ClipboardIcon, Save, Sparkles } from 'lucide-react-native';
+import { db } from '@/lib/storage/db';
+import * as repos from '@/lib/storage/repositories';
+import { theme } from '@/lib/theme';
+
+type ContentType = 'unknown' | 'url' | 'note';
+
+/**
+ * Detect if content is a URL
+ */
+function detectContentType(text: string): ContentType {
+  if (!text.trim()) return 'unknown';
+
+  const trimmed = text.trim();
+
+  // Check for URL patterns
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return 'url';
+    }
+  } catch {
+    // Not a valid URL
+  }
+
+  // Check for URL-like patterns without protocol
+  if (/^(www\.)?[\w-]+\.[a-z]{2,}(\/\S*)?$/i.test(trimmed)) {
+    return 'url';
+  }
+
+  return 'note';
+}
+
+/**
+ * Extract title from URL
+ */
+function extractTitleFromUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.replace(/\/$/, '');
+    const segments = pathname.split('/').filter(s => s.length > 0);
+
+    if (segments.length > 0) {
+      const lastSegment = segments[segments.length - 1];
+      return decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
+    }
+
+    return urlObj.hostname;
+  } catch {
+    return 'Link';
+  }
+}
+
+/**
+ * Extract title from text content
+ */
+function extractTitleFromText(text: string): string {
+  const cleaned = text.trim();
+  const firstLine = cleaned.split('\n')[0].trim();
+
+  if (firstLine.length > 0 && firstLine.length <= 60) {
+    return firstLine;
+  }
+
+  const firstSentence = cleaned.split(/[.!?]/)[0].trim();
+  if (firstSentence.length > 0 && firstSentence.length <= 60) {
+    return firstSentence;
+  }
+
+  return cleaned.slice(0, 50) + (cleaned.length > 50 ? '...' : '');
+}
+
+/**
+ * Normalize URL (add https:// if missing)
+ */
+function normalizeUrl(text: string): string {
+  const trimmed = text.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return 'https://' + trimmed;
+  }
+  return trimmed;
+}
+
+export default function ScratchScreen() {
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const contentType = detectContentType(text);
+  const hasContent = text.trim().length > 0;
+
+  const handlePaste = useCallback(async () => {
+    try {
+      const clipboardContent = await Clipboard.getStringAsync();
+      if (clipboardContent) {
+        setText(clipboardContent);
+      } else {
+        Alert.alert('Empty Clipboard', 'Nothing to paste');
+      }
+    } catch (error) {
+      console.error('Failed to paste:', error);
+      Alert.alert('Error', 'Could not read clipboard');
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!hasContent) return;
+
+    setLoading(true);
+    try {
+      await db.init();
+      const rawDb = db.getRawDb();
+
+      const itemId = uuidv4();
+      const isUrl = contentType === 'url';
+      const content = text.trim();
+
+      // Prepare item data based on content type
+      const title = isUrl
+        ? extractTitleFromUrl(normalizeUrl(content))
+        : extractTitleFromText(content);
+
+      // Create media item directly via repository
+      await repos.createMediaItem(rawDb, {
+        id: itemId,
+        type: isUrl ? 'url' : 'text',
+        title,
+        source_url: isUrl ? normalizeUrl(content) : null,
+        extracted_text: isUrl ? null : content,
+        notes: null,
+        local_uri: null,
+        metadata_json: JSON.stringify({
+          source: 'scratch',
+          captured_at: Date.now(),
+        }),
+      });
+
+      // Enqueue a job for normalization and tagging
+      const jobId = uuidv4();
+      await repos.createJob(rawDb, {
+        id: jobId,
+        kind: 'normalize_and_tag',
+        payload_json: JSON.stringify({ itemId }),
+      });
+
+      // Success feedback
+      Alert.alert(
+        'Saved!',
+        `${isUrl ? 'Link' : 'Note'} captured. Processing will happen in background.`,
+        [
+          { text: 'Add Another', onPress: () => setText('') },
+          { text: 'View Library', onPress: () => router.push('/(tabs)/library') },
+        ]
+      );
+
+      setText('');
+    } catch (error) {
+      console.error('Failed to save:', error);
+      Alert.alert('Error', 'Failed to save. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [text, hasContent, contentType]);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Appbar.Header style={styles.header}>
+        <Appbar.Content title="Scratch" titleStyle={styles.headerTitle} />
+      </Appbar.Header>
+
+      <View style={styles.content}>
+        <View style={styles.inputContainer}>
+          <TextInput
+            mode="outlined"
+            multiline
+            numberOfLines={10}
+            placeholder="Paste a link or jot down a thought..."
+            value={text}
+            onChangeText={setText}
+            style={styles.textInput}
+            textAlignVertical="top"
+            outlineColor={theme.colors.outline}
+            activeOutlineColor={theme.colors.primary}
+            autoFocus
+          />
+
+          {hasContent && (
+            <HelperText type="info" style={styles.typeIndicator}>
+              <Sparkles size={12} color={theme.colors.primary} />
+              {' '}Detected: {contentType === 'url' ? 'Link' : 'Note'}
+            </HelperText>
+          )}
+        </View>
+
+        <View style={styles.actions}>
+          <Button
+            mode="outlined"
+            onPress={handlePaste}
+            style={styles.actionButton}
+            icon={() => <ClipboardIcon size={20} color={theme.colors.primary} />}
+          >
+            Paste
+          </Button>
+
+          <Button
+            mode="contained"
+            onPress={handleSave}
+            loading={loading}
+            disabled={loading || !hasContent}
+            style={[styles.actionButton, styles.saveButton]}
+            icon={() => <Save size={20} color={theme.colors.onPrimary} />}
+          >
+            Save
+          </Button>
+        </View>
+
+        <Text style={styles.hint}>
+          Quick capture for links and notes.{'\n'}
+          Auto-tagging happens in the background.
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  header: {
+    backgroundColor: theme.colors.surface,
+  },
+  headerTitle: {
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  inputContainer: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    fontSize: 16,
+  },
+  typeIndicator: {
+    color: theme.colors.primary,
+    marginTop: 4,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionButton: {
+    flex: 1,
+  },
+  saveButton: {
+    flex: 2,
+  },
+  hint: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingBottom: 16,
+  },
+});
