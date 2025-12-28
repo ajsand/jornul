@@ -7,6 +7,7 @@ import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
 import { Job } from '@/lib/storage/types';
 import { registerJobHandler } from './jobRunner';
+import { updateBatchJobStatus } from './massUpload';
 
 /**
  * Extract domain from URL
@@ -42,8 +43,12 @@ function computeTextStats(text: string): {
  * Normalize and tag handler
  * - For links: extract domain, update source_domain
  * - For notes: compute text stats, store in media_meta
+ * - For files: merge existing meta with normalized info
  */
-async function handleNormalizeAndTag(job: Job, payload: { itemId: string }): Promise<void> {
+async function handleNormalizeAndTag(
+  job: Job,
+  payload: { itemId: string; batchId?: string }
+): Promise<void> {
   if (!payload.itemId) {
     throw new Error('Missing itemId in payload');
   }
@@ -57,22 +62,32 @@ async function handleNormalizeAndTag(job: Job, payload: { itemId: string }): Pro
 
   console.log(`[NormalizeAndTag] Processing item: ${item.id} (type: ${item.type})`);
 
+  // Get existing meta if any
+  const existingMeta = await repos.getMediaMeta(rawDb, item.id);
+  let existingExtra: Record<string, any> = {};
+  if (existingMeta?.extra_json) {
+    try {
+      existingExtra = JSON.parse(existingMeta.extra_json);
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
   if (item.type === 'url' && item.source_url) {
     // Handle URL items
     const domain = extractDomain(item.source_url);
 
     if (domain) {
-      // Update media_meta with source_domain
       await repos.upsertMediaMeta(rawDb, {
         item_id: item.id,
         source_domain: domain,
         extra_json: JSON.stringify({
+          ...existingExtra,
           normalized_at: Date.now(),
           original_url: item.source_url,
         }),
       });
 
-      // Update title if it looks like a placeholder
       if (!item.title || item.title === 'Link' || item.title === domain) {
         await repos.updateMediaItem(rawDb, item.id, {
           title: domain,
@@ -88,16 +103,51 @@ async function handleNormalizeAndTag(job: Job, payload: { itemId: string }): Pro
     await repos.upsertMediaMeta(rawDb, {
       item_id: item.id,
       extra_json: JSON.stringify({
+        ...existingExtra,
         normalized_at: Date.now(),
         text_stats: stats,
       }),
     });
 
     console.log(`[NormalizeAndTag] Note normalized: ${stats.word_count} words`);
+  } else if (['image', 'audio', 'video', 'pdf'].includes(item.type)) {
+    // Handle file items - just mark as normalized
+    await repos.upsertMediaMeta(rawDb, {
+      item_id: item.id,
+      extra_json: JSON.stringify({
+        ...existingExtra,
+        normalized_at: Date.now(),
+      }),
+    });
+
+    console.log(`[NormalizeAndTag] File normalized: ${item.type}`);
   }
 
-  // TODO: Future iterations will add actual tagging logic here
-  // For now, we just mark the normalization as complete
+  // Update batch job status if this is part of a batch
+  if (payload.batchId) {
+    await updateBatchJobStatus(payload.batchId);
+  }
+}
+
+/**
+ * Batch import handler
+ * Monitors child jobs and updates overall progress
+ */
+async function handleBatchImport(
+  job: Job,
+  payload: { childJobIds: string[]; totalFiles: number }
+): Promise<void> {
+  // The batch job itself doesn't need to do much work
+  // It just serves as a tracking container
+  // Child jobs trigger updateBatchJobStatus when they complete
+  console.log(`[BatchImport] Batch job ${job.id} tracking ${payload.totalFiles} files`);
+
+  // Mark as running - individual job completions will update progress
+  const rawDb = db.getRawDb();
+  await repos.updateJob(rawDb, job.id, {
+    status: 'running',
+    progress: 0,
+  });
 }
 
 /**
@@ -105,5 +155,6 @@ async function handleNormalizeAndTag(job: Job, payload: { itemId: string }): Pro
  */
 export function registerAllJobHandlers(): void {
   registerJobHandler('normalize_and_tag', handleNormalizeAndTag);
+  registerJobHandler('batch_import', handleBatchImport);
   console.log('[JobHandlers] All handlers registered');
 }

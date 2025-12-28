@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import { Appbar, TextInput, Button, Text, HelperText } from 'react-native-paper';
+import { Appbar, TextInput, Button, Text, HelperText, Divider } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { v4 as uuidv4 } from 'uuid';
 import * as Clipboard from 'expo-clipboard';
-import { Clipboard as ClipboardIcon, Save, Sparkles } from 'lucide-react-native';
+import { Clipboard as ClipboardIcon, Save, Sparkles, Upload } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
+import { pickMultipleFiles, processBatchUpload } from '@/lib/services';
 import { theme } from '@/lib/theme';
 
 type ContentType = 'unknown' | 'url' | 'note';
@@ -91,9 +92,42 @@ function normalizeUrl(text: string): string {
 export default function ScratchScreen() {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const contentType = detectContentType(text);
   const hasContent = text.trim().length > 0;
+
+  const handleMassUpload = useCallback(async () => {
+    try {
+      const files = await pickMultipleFiles();
+
+      if (!files || files.length === 0) {
+        return; // User cancelled
+      }
+
+      setUploading(true);
+
+      const result = await processBatchUpload(files);
+
+      if (result.success) {
+        Alert.alert(
+          'Import Started',
+          `${result.itemCount} file${result.itemCount > 1 ? 's' : ''} added. Check Inbox for progress.`,
+          [
+            { text: 'View Inbox', onPress: () => router.push('/(tabs)/inbox') },
+            { text: 'OK' },
+          ]
+        );
+      } else {
+        Alert.alert('Import Failed', result.error || 'Unknown error occurred');
+      }
+    } catch (error) {
+      console.error('Mass upload error:', error);
+      Alert.alert('Error', 'Failed to import files. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  }, []);
 
   const handlePaste = useCallback(async () => {
     try {
@@ -220,9 +254,23 @@ export default function ScratchScreen() {
           </Button>
         </View>
 
+        <Divider style={styles.divider} />
+
+        <Button
+          mode="outlined"
+          onPress={handleMassUpload}
+          loading={uploading}
+          disabled={uploading}
+          style={styles.uploadButton}
+          icon={() => <Upload size={20} color={theme.colors.secondary} />}
+          textColor={theme.colors.secondary}
+        >
+          Import Files
+        </Button>
+
         <Text style={styles.hint}>
           Quick capture for links and notes.{'\n'}
-          Auto-tagging happens in the background.
+          Use Import Files for photos, PDFs, audio, and video.
         </Text>
       </View>
     </SafeAreaView>
@@ -261,13 +309,21 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   actionButton: {
     flex: 1,
   },
   saveButton: {
     flex: 2,
+  },
+  divider: {
+    marginVertical: 12,
+    backgroundColor: theme.colors.outline,
+  },
+  uploadButton: {
+    marginBottom: 16,
+    borderColor: theme.colors.secondary,
   },
   hint: {
     color: theme.colors.onSurfaceVariant,

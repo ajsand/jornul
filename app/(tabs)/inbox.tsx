@@ -11,6 +11,11 @@ import {
   Link as LinkIcon,
   FileText,
   RefreshCw,
+  FolderUp,
+  Image,
+  Music,
+  Video,
+  FileType,
 } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
@@ -21,11 +26,17 @@ import {
   isJobRunnerActive,
   getJobStats,
   registerAllJobHandlers,
+  getBatchProgress,
 } from '@/lib/services';
 import { theme } from '@/lib/theme';
 
 interface JobWithItem extends Job {
   item?: MediaItem | null;
+  batchInfo?: {
+    total: number;
+    completed: number;
+    failed: number;
+  };
 }
 
 const STATUS_CONFIG = {
@@ -70,22 +81,61 @@ export default function InboxScreen() {
       // Get recent jobs (limit 50)
       const allJobs = await repos.listJobs(rawDb, { limit: 50 });
 
-      // Enrich with item data
+      // Filter out child jobs that are part of a batch (to avoid clutter)
+      const batchIds = new Set<string>();
+      allJobs.forEach(job => {
+        if (job.kind === 'batch_import' && job.payload_json) {
+          batchIds.add(job.id);
+        }
+      });
+
+      // Enrich with item data and batch info
       const enrichedJobs: JobWithItem[] = await Promise.all(
-        allJobs.map(async (job) => {
-          let item: MediaItem | null = null;
-          if (job.payload_json) {
-            try {
-              const payload = JSON.parse(job.payload_json);
-              if (payload.itemId) {
-                item = await repos.getMediaItem(rawDb, payload.itemId);
+        allJobs
+          .filter(job => {
+            // Keep batch jobs and non-batch jobs
+            // Filter out child jobs of batches
+            if (job.kind === 'normalize_and_tag' && job.payload_json) {
+              try {
+                const payload = JSON.parse(job.payload_json);
+                if (payload.batchId && batchIds.has(payload.batchId)) {
+                  return false; // Hide child jobs
+                }
+              } catch {
+                // Keep if parse fails
               }
-            } catch {
-              // Ignore parse errors
             }
-          }
-          return { ...job, item };
-        })
+            return true;
+          })
+          .map(async (job) => {
+            let item: MediaItem | null = null;
+            let batchInfo: { total: number; completed: number; failed: number } | undefined;
+
+            if (job.payload_json) {
+              try {
+                const payload = JSON.parse(job.payload_json);
+                if (payload.itemId) {
+                  item = await repos.getMediaItem(rawDb, payload.itemId);
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
+
+            // Get batch progress for batch jobs
+            if (job.kind === 'batch_import') {
+              const progress = await getBatchProgress(job.id);
+              if (progress) {
+                batchInfo = {
+                  total: progress.total,
+                  completed: progress.completed,
+                  failed: progress.failed,
+                };
+              }
+            }
+
+            return { ...job, item, batchInfo };
+          })
       );
 
       setJobs(enrichedJobs);
@@ -149,28 +199,71 @@ export default function InboxScreen() {
     }
   };
 
+  const getItemIcon = (job: JobWithItem) => {
+    if (job.kind === 'batch_import') {
+      return <FolderUp size={20} color={theme.colors.tertiary} />;
+    }
+
+    const type = job.item?.type;
+    switch (type) {
+      case 'url':
+        return <LinkIcon size={20} color={theme.colors.primary} />;
+      case 'image':
+        return <Image size={20} color={theme.colors.secondary} />;
+      case 'audio':
+        return <Music size={20} color={theme.colors.secondary} />;
+      case 'video':
+        return <Video size={20} color={theme.colors.secondary} />;
+      case 'pdf':
+        return <FileType size={20} color={theme.colors.secondary} />;
+      default:
+        return <FileText size={20} color={theme.colors.secondary} />;
+    }
+  };
+
+  const getJobTitle = (job: JobWithItem): string => {
+    if (job.kind === 'batch_import' && job.batchInfo) {
+      return `Batch Import (${job.batchInfo.total} files)`;
+    }
+    return job.item?.title || 'Processing...';
+  };
+
+  const getJobSubtitle = (job: JobWithItem): string => {
+    if (job.kind === 'batch_import' && job.batchInfo) {
+      const { completed, failed, total } = job.batchInfo;
+      if (completed + failed >= total) {
+        return failed > 0 ? `Done with ${failed} error${failed > 1 ? 's' : ''}` : 'Completed';
+      }
+      return `${completed} of ${total} done`;
+    }
+    return job.kind.replace(/_/g, ' ');
+  };
+
   const renderJob = ({ item: job }: { item: JobWithItem }) => {
     const statusConfig = STATUS_CONFIG[job.status] || STATUS_CONFIG.pending;
     const StatusIcon = statusConfig.icon;
-    const isLink = job.item?.type === 'url';
+    const isBatch = job.kind === 'batch_import';
+
+    // Calculate batch progress
+    let displayProgress = job.progress;
+    if (isBatch && job.batchInfo) {
+      const { completed, failed, total } = job.batchInfo;
+      displayProgress = total > 0 ? (completed + failed) / total : 0;
+    }
 
     return (
-      <Card style={styles.jobCard} onPress={() => handleJobPress(job)}>
+      <Card style={styles.jobCard} onPress={() => !isBatch && handleJobPress(job)}>
         <Card.Content style={styles.jobContent}>
           <View style={styles.jobHeader}>
-            <View style={styles.jobIconContainer}>
-              {isLink ? (
-                <LinkIcon size={20} color={theme.colors.primary} />
-              ) : (
-                <FileText size={20} color={theme.colors.secondary} />
-              )}
+            <View style={[styles.jobIconContainer, isBatch && styles.batchIconContainer]}>
+              {getItemIcon(job)}
             </View>
             <View style={styles.jobInfo}>
               <Text variant="titleSmall" numberOfLines={1} style={styles.jobTitle}>
-                {job.item?.title || 'Processing...'}
+                {getJobTitle(job)}
               </Text>
               <Text variant="bodySmall" style={styles.jobKind}>
-                {job.kind.replace(/_/g, ' ')}
+                {getJobSubtitle(job)}
               </Text>
             </View>
             <View style={styles.statusContainer}>
@@ -181,9 +274,9 @@ export default function InboxScreen() {
             </View>
           </View>
 
-          {job.status === 'running' && (
+          {(job.status === 'running' || (isBatch && job.status !== 'done' && job.status !== 'failed')) && (
             <ProgressBar
-              progress={job.progress}
+              progress={displayProgress}
               color={theme.colors.primary}
               style={styles.progressBar}
             />
@@ -328,6 +421,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  batchIconContainer: {
+    backgroundColor: theme.colors.tertiaryContainer,
   },
   jobInfo: {
     flex: 1,

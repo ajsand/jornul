@@ -5,3 +5,4 @@
 
 export * from './jobRunner';
 export { registerAllJobHandlers } from './jobHandlers';
+export * from './massUpload';
