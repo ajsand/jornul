@@ -145,6 +145,7 @@ export async function listMediaItems(
 ): Promise<MediaItem[]> {
   const whereClauses: string[] = [];
   const params: any[] = [];
+  const joins: string[] = [];
 
   if (filters?.type) {
     whereClauses.push('m.type = ?');
@@ -169,13 +170,17 @@ export async function listMediaItems(
     params.push(searchPattern, searchPattern, searchPattern);
   }
 
-  let query = 'SELECT DISTINCT m.* FROM media_items m';
+  // Handle source domain filtering (joins with media_meta)
+  if (filters?.sourceDomain) {
+    joins.push('LEFT JOIN media_meta mm ON m.id = mm.item_id');
+    whereClauses.push('mm.source_domain = ?');
+    params.push(filters.sourceDomain);
+  }
 
+  // Handle tag filtering
   if (filters?.tags && filters.tags.length > 0) {
-    query += `
-      INNER JOIN item_tags it ON m.id = it.item_id
-      INNER JOIN tags t ON it.tag_id = t.id
-    `;
+    joins.push('INNER JOIN item_tags it ON m.id = it.item_id');
+    joins.push('INNER JOIN tags t ON it.tag_id = t.id');
     const tagPlaceholders = filters.tags.map(() => '?').join(',');
     whereClauses.push(`t.name IN (${tagPlaceholders})`);
     params.push(...filters.tags);
@@ -184,6 +189,12 @@ export async function listMediaItems(
       whereClauses.push('(it.confidence IS NULL OR it.confidence >= ?)');
       params.push(filters.minTagConfidence);
     }
+  }
+
+  let query = 'SELECT DISTINCT m.* FROM media_items m';
+
+  if (joins.length > 0) {
+    query += ' ' + joins.join(' ');
   }
 
   if (whereClauses.length > 0) {
@@ -340,4 +351,30 @@ export async function deleteMediaMeta(
 ): Promise<boolean> {
   const result = await db.runAsync('DELETE FROM media_meta WHERE item_id = ?', [itemId]);
   return result.changes > 0;
+}
+
+/**
+ * Get unique source domains from media_meta
+ */
+export async function getUniqueSourceDomains(
+  db: SQLite.SQLiteDatabase
+): Promise<string[]> {
+  const results = await db.getAllAsync<{ source_domain: string }>(
+    `SELECT DISTINCT source_domain FROM media_meta
+     WHERE source_domain IS NOT NULL AND source_domain != ''
+     ORDER BY source_domain`
+  );
+  return results.map(r => r.source_domain);
+}
+
+/**
+ * Get unique media types from media_items
+ */
+export async function getUniqueMediaTypes(
+  db: SQLite.SQLiteDatabase
+): Promise<string[]> {
+  const results = await db.getAllAsync<{ type: string }>(
+    `SELECT DISTINCT type FROM media_items ORDER BY type`
+  );
+  return results.map(r => r.type);
 }

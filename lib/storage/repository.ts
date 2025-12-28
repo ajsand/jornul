@@ -170,6 +170,7 @@ export async function listMediaItems(
 ): Promise<MediaItem[]> {
   const whereClauses: string[] = [];
   const params: any[] = [];
+  const joins: string[] = [];
 
   // Build WHERE clause
   if (filters?.type) {
@@ -195,14 +196,17 @@ export async function listMediaItems(
     params.push(searchPattern, searchPattern, searchPattern);
   }
 
-  // Handle tag filtering
-  let query = 'SELECT DISTINCT m.* FROM media_items m';
+  // Handle source domain filtering (joins with media_meta)
+  if (filters?.sourceDomain) {
+    joins.push('LEFT JOIN media_meta mm ON m.id = mm.item_id');
+    whereClauses.push('mm.source_domain = ?');
+    params.push(filters.sourceDomain);
+  }
 
+  // Handle tag filtering
   if (filters?.tags && filters.tags.length > 0) {
-    query += `
-      INNER JOIN item_tags it ON m.id = it.item_id
-      INNER JOIN tags t ON it.tag_id = t.id
-    `;
+    joins.push('INNER JOIN item_tags it ON m.id = it.item_id');
+    joins.push('INNER JOIN tags t ON it.tag_id = t.id');
     const tagPlaceholders = filters.tags.map(() => '?').join(',');
     whereClauses.push(`t.name IN (${tagPlaceholders})`);
     params.push(...filters.tags);
@@ -211,6 +215,12 @@ export async function listMediaItems(
       whereClauses.push('(it.confidence IS NULL OR it.confidence >= ?)');
       params.push(filters.minTagConfidence);
     }
+  }
+
+  let query = 'SELECT DISTINCT m.* FROM media_items m';
+
+  if (joins.length > 0) {
+    query += ' ' + joins.join(' ');
   }
 
   if (whereClauses.length > 0) {

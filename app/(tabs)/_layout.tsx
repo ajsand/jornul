@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Inbox, BookOpen, PenLine, Wifi, Settings } from 'lucide-react-native';
+import { Inbox, Archive, PenLine, Wifi, Settings } from 'lucide-react-native';
 import { theme } from '@/lib/theme';
 
 export default function TabLayout() {
@@ -35,9 +35,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          title: 'Library',
+          title: 'Vault',
           tabBarIcon: ({ size, color }) => (
-            <BookOpen size={size} color={color} />
+            <Archive size={size} color={color} />
           ),
         }}
       />

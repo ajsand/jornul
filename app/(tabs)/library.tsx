@@ -1,50 +1,120 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { Appbar, Text, Searchbar, Menu, IconButton, Chip } from 'react-native-paper';
+import { View, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { Appbar, Text, Searchbar, Menu, IconButton, Chip, Divider } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { ArrowUpDown } from 'lucide-react-native';
+import { router, useFocusEffect } from 'expo-router';
+import {
+  ArrowUpDown,
+  List,
+  LayoutGrid,
+  Filter,
+  X,
+  Calendar,
+  Globe,
+} from 'lucide-react-native';
 import { MediaItemList } from '@/components/MediaItemList';
-import { MediaItem } from '@/lib/storage/types';
+import { MediaItem, MediaType } from '@/lib/storage/types';
 import { db } from '@/lib/storage/db';
+import * as repos from '@/lib/storage/repositories';
 import { theme } from '@/lib/theme';
 
 type SortOrder = 'newest' | 'oldest';
+type ViewMode = 'list' | 'grid';
+
+const MEDIA_TYPE_LABELS: Record<MediaType, string> = {
+  text: 'Notes',
+  url: 'Links',
+  image: 'Images',
+  audio: 'Audio',
+  video: 'Video',
+  pdf: 'PDFs',
+};
 
 export default function LibraryScreen() {
   const [items, setItems] = useState<MediaItem[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [sortMenuVisible, setSortMenuVisible] = useState(false);
+
+  // Filter states
+  const [showFilters, setShowFilters] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<MediaType | null>(null);
+  const [sourceDomainFilter, setSourceDomainFilter] = useState<string | null>(null);
+  const [dateRangeFilter, setDateRangeFilter] = useState<'today' | 'week' | 'month' | null>(null);
+
+  // Available filter options
+  const [availableTypes, setAvailableTypes] = useState<MediaType[]>([]);
+  const [availableDomains, setAvailableDomains] = useState<string[]>([]);
+
+  const hasActiveFilters = typeFilter || sourceDomainFilter || dateRangeFilter;
+
+  const getDateRange = useCallback((range: 'today' | 'week' | 'month' | null): { dateFrom?: number; dateTo?: number } => {
+    if (!range) return {};
+
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+
+    switch (range) {
+      case 'today':
+        return { dateFrom: now - day, dateTo: now };
+      case 'week':
+        return { dateFrom: now - 7 * day, dateTo: now };
+      case 'month':
+        return { dateFrom: now - 30 * day, dateTo: now };
+      default:
+        return {};
+    }
+  }, []);
 
   const loadItems = useCallback(async () => {
     try {
-      const result = await db.listMediaItems({
+      const rawDb = db.getRawDb();
+      const dateRange = getDateRange(dateRangeFilter);
+
+      const result = await repos.listMediaItems(rawDb, {
         searchText: searchQuery || undefined,
+        type: typeFilter || undefined,
+        sourceDomain: sourceDomainFilter || undefined,
+        dateFrom: dateRange.dateFrom,
+        dateTo: dateRange.dateTo,
         orderBy: 'created_at',
         orderDirection: sortOrder === 'newest' ? 'DESC' : 'ASC',
       });
       setItems(result);
-
-      // Check for pending ingest items
-      const pending = await db.listIngestItems();
-      const pendingOrProcessing = pending.filter(
-        item => item.status === 'pending' || item.status === 'processing'
-      );
-      setPendingCount(pendingOrProcessing.length);
     } catch (error) {
       console.error('Failed to load items:', error);
       setItems([]);
-      setPendingCount(0);
     }
-  }, [searchQuery, sortOrder]);
+  }, [searchQuery, sortOrder, typeFilter, sourceDomainFilter, dateRangeFilter, getDateRange]);
+
+  const loadFilterOptions = useCallback(async () => {
+    try {
+      const rawDb = db.getRawDb();
+      const types = await repos.getUniqueMediaTypes(rawDb);
+      const domains = await repos.getUniqueSourceDomains(rawDb);
+      setAvailableTypes(types as MediaType[]);
+      setAvailableDomains(domains);
+    } catch (error) {
+      console.error('Failed to load filter options:', error);
+    }
+  }, []);
 
   useEffect(() => {
     initializeDatabase();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        loadItems();
+        loadFilterOptions();
+      }
+    }, [loading, loadItems, loadFilterOptions])
+  );
 
   useEffect(() => {
     if (!loading) {
@@ -55,6 +125,7 @@ export default function LibraryScreen() {
   const initializeDatabase = async () => {
     try {
       await db.init();
+      await loadFilterOptions();
       await loadItems();
     } catch (error) {
       console.error('Failed to initialize database:', error);
@@ -65,6 +136,7 @@ export default function LibraryScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    await loadFilterOptions();
     await loadItems();
     setRefreshing(false);
   };
@@ -75,17 +147,27 @@ export default function LibraryScreen() {
 
   const handleSortChange = (order: SortOrder) => {
     setSortOrder(order);
-    setMenuVisible(false);
+    setSortMenuVisible(false);
   };
 
-  const openMenu = () => setMenuVisible(true);
-  const closeMenu = () => setMenuVisible(false);
+  const toggleViewMode = () => {
+    setViewMode(prev => prev === 'list' ? 'grid' : 'list');
+  };
+
+  const clearFilters = () => {
+    setTypeFilter(null);
+    setSourceDomainFilter(null);
+    setDateRangeFilter(null);
+  };
+
+  const openSortMenu = () => setSortMenuVisible(true);
+  const closeSortMenu = () => setSortMenuVisible(false);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <Appbar.Header style={styles.header}>
-          <Appbar.Content title="Library" titleStyle={styles.headerTitle} />
+          <Appbar.Content title="Vault" titleStyle={styles.headerTitle} />
         </Appbar.Header>
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -97,14 +179,31 @@ export default function LibraryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Appbar.Header style={styles.header}>
-        <Appbar.Content title="Library" titleStyle={styles.headerTitle} />
+        <Appbar.Content title="Vault" titleStyle={styles.headerTitle} />
+        <IconButton
+          icon={() => (
+            <Filter
+              size={22}
+              color={hasActiveFilters ? theme.colors.primary : theme.colors.onSurface}
+            />
+          )}
+          onPress={() => setShowFilters(!showFilters)}
+        />
+        <IconButton
+          icon={() => (
+            viewMode === 'list'
+              ? <LayoutGrid size={22} color={theme.colors.onSurface} />
+              : <List size={22} color={theme.colors.onSurface} />
+          )}
+          onPress={toggleViewMode}
+        />
         <Menu
-          visible={menuVisible}
-          onDismiss={closeMenu}
+          visible={sortMenuVisible}
+          onDismiss={closeSortMenu}
           anchor={
             <IconButton
-              icon={() => <ArrowUpDown size={24} color={theme.colors.onSurface} />}
-              onPress={openMenu}
+              icon={() => <ArrowUpDown size={22} color={theme.colors.onSurface} />}
+              onPress={openSortMenu}
             />
           }
         >
@@ -123,7 +222,7 @@ export default function LibraryScreen() {
 
       <View style={styles.searchContainer}>
         <Searchbar
-          placeholder="Search items..."
+          placeholder="Search vault..."
           onChangeText={setSearchQuery}
           value={searchQuery}
           style={styles.searchBar}
@@ -131,43 +230,162 @@ export default function LibraryScreen() {
         />
       </View>
 
-      {pendingCount > 0 && (
-        <View style={styles.statusBanner}>
-          <Chip
-            icon="clock-outline"
-            style={styles.statusChip}
-            textStyle={styles.statusText}
-          >
-            {pendingCount} item{pendingCount > 1 ? 's' : ''} processing...
-          </Chip>
+      {showFilters && (
+        <View style={styles.filtersContainer}>
+          {hasActiveFilters && (
+            <View style={styles.activeFiltersRow}>
+              <Text style={styles.filterSectionLabel}>Active:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activeFiltersScroll}>
+                {typeFilter && (
+                  <Chip
+                    compact
+                    onClose={() => setTypeFilter(null)}
+                    style={styles.activeFilterChip}
+                    textStyle={styles.activeFilterText}
+                  >
+                    {MEDIA_TYPE_LABELS[typeFilter]}
+                  </Chip>
+                )}
+                {sourceDomainFilter && (
+                  <Chip
+                    compact
+                    onClose={() => setSourceDomainFilter(null)}
+                    style={styles.activeFilterChip}
+                    textStyle={styles.activeFilterText}
+                    icon={() => <Globe size={12} color={theme.colors.primary} />}
+                  >
+                    {sourceDomainFilter}
+                  </Chip>
+                )}
+                {dateRangeFilter && (
+                  <Chip
+                    compact
+                    onClose={() => setDateRangeFilter(null)}
+                    style={styles.activeFilterChip}
+                    textStyle={styles.activeFilterText}
+                    icon={() => <Calendar size={12} color={theme.colors.primary} />}
+                  >
+                    {dateRangeFilter === 'today' ? 'Today' : dateRangeFilter === 'week' ? 'This Week' : 'This Month'}
+                  </Chip>
+                )}
+              </ScrollView>
+              <IconButton
+                icon={() => <X size={16} color={theme.colors.onSurfaceVariant} />}
+                size={20}
+                onPress={clearFilters}
+              />
+            </View>
+          )}
+
+          <Divider style={styles.filterDivider} />
+
+          <View style={styles.filterSection}>
+            <Text style={styles.filterSectionLabel}>Type</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipRow}>
+                {availableTypes.map(type => (
+                  <Chip
+                    key={type}
+                    selected={typeFilter === type}
+                    onPress={() => setTypeFilter(typeFilter === type ? null : type)}
+                    style={styles.filterChip}
+                    compact
+                  >
+                    {MEDIA_TYPE_LABELS[type] || type}
+                  </Chip>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.filterSection}>
+            <Text style={styles.filterSectionLabel}>Date</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipRow}>
+                <Chip
+                  selected={dateRangeFilter === 'today'}
+                  onPress={() => setDateRangeFilter(dateRangeFilter === 'today' ? null : 'today')}
+                  style={styles.filterChip}
+                  compact
+                >
+                  Today
+                </Chip>
+                <Chip
+                  selected={dateRangeFilter === 'week'}
+                  onPress={() => setDateRangeFilter(dateRangeFilter === 'week' ? null : 'week')}
+                  style={styles.filterChip}
+                  compact
+                >
+                  This Week
+                </Chip>
+                <Chip
+                  selected={dateRangeFilter === 'month'}
+                  onPress={() => setDateRangeFilter(dateRangeFilter === 'month' ? null : 'month')}
+                  style={styles.filterChip}
+                  compact
+                >
+                  This Month
+                </Chip>
+              </View>
+            </ScrollView>
+          </View>
+
+          {availableDomains.length > 0 && (
+            <View style={styles.filterSection}>
+              <Text style={styles.filterSectionLabel}>Source</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.chipRow}>
+                  {availableDomains.map(domain => (
+                    <Chip
+                      key={domain}
+                      selected={sourceDomainFilter === domain}
+                      onPress={() => setSourceDomainFilter(sourceDomainFilter === domain ? null : domain)}
+                      style={styles.filterChip}
+                      compact
+                    >
+                      {domain}
+                    </Chip>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          <Divider style={styles.filterDivider} />
         </View>
       )}
 
       {items.length === 0 ? (
         <View style={styles.emptyContainer}>
-          {searchQuery ? (
+          {searchQuery || hasActiveFilters ? (
             <>
               <Text variant="headlineSmall" style={styles.emptyTitle}>
                 No results found
               </Text>
               <Text style={styles.emptyText}>
-                No items match &quot;{searchQuery}&quot;
+                {searchQuery
+                  ? `No items match "${searchQuery}"`
+                  : 'No items match the selected filters'}
               </Text>
-              <IconButton
-                icon="close"
-                mode="contained"
-                onPress={() => setSearchQuery('')}
-                style={styles.clearButton}
-              />
+              {hasActiveFilters && (
+                <Chip
+                  icon="close"
+                  mode="outlined"
+                  onPress={clearFilters}
+                  style={styles.clearFiltersChip}
+                >
+                  Clear filters
+                </Chip>
+              )}
             </>
           ) : (
             <>
               <Text variant="headlineSmall" style={styles.emptyTitle}>
-                Your Library is Empty
+                Your Vault is Empty
               </Text>
               <Text style={styles.emptyText}>
                 Start adding content to see it here.{'\n'}
-                Tap the + tab to create your first item.
+                Tap Scratch to create your first item.
               </Text>
             </>
           )}
@@ -178,6 +396,7 @@ export default function LibraryScreen() {
           onItemPress={handleItemPress}
           refreshing={refreshing}
           onRefresh={handleRefresh}
+          viewMode={viewMode}
         />
       )}
     </SafeAreaView>
@@ -230,23 +449,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  clearButton: {
+  clearFiltersChip: {
     marginTop: 16,
   },
-  statusBanner: {
+  // Filter styles
+  filtersContainer: {
+    backgroundColor: theme.colors.surface,
+    paddingBottom: 8,
+  },
+  filterDivider: {
+    backgroundColor: theme.colors.outline,
+  },
+  filterSection: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  filterSectionLabel: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterChip: {
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  activeFiltersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outline,
-    alignItems: 'center',
   },
-  statusChip: {
-    backgroundColor: theme.colors.secondaryContainer,
+  activeFiltersScroll: {
+    flex: 1,
+    marginLeft: 8,
   },
-  statusText: {
-    color: theme.colors.onSecondaryContainer,
-    fontSize: 12,
+  activeFilterChip: {
+    marginRight: 8,
+    backgroundColor: theme.colors.primaryContainer,
+  },
+  activeFilterText: {
+    color: theme.colors.onPrimaryContainer,
   },
 });
-

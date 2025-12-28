@@ -159,6 +159,7 @@ export interface ListMediaItemsFilters {
   dateFrom?: number;
   dateTo?: number;
   searchText?: string;
+  sourceDomain?: string;
   limit?: number;
   offset?: number;
   orderBy?: 'created_at' | 'updated_at' | 'title';
