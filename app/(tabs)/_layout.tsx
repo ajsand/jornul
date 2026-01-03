@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Inbox, Archive, PenLine, Wifi, Settings } from 'lucide-react-native';
+import { Inbox, Archive, PenLine, Wifi, Settings, Layers } from 'lucide-react-native';
 import { theme } from '@/lib/theme';
 
 export default function TabLayout() {
@@ -38,6 +38,15 @@ export default function TabLayout() {
           title: 'Vault',
           tabBarIcon: ({ size, color }) => (
             <Archive size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="swipe"
+        options={{
+          title: 'Discover',
+          tabBarIcon: ({ size, color }) => (
+            <Layers size={size} color={color} />
           ),
         }}
       />
