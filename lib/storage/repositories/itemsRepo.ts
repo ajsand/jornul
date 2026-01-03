@@ -12,8 +12,8 @@ import {
   CreateMediaMetaInput,
   UpdateMediaMetaInput,
   ListMediaItemsFilters,
-  TagSource,
 } from '../types';
+import { upsertFtsEntry, deleteFtsEntry } from './ftsRepo';
 
 // ============ Media Items ============
 
@@ -39,6 +39,10 @@ export async function createMediaItem(
       now,
     ]
   );
+
+  // Update FTS index
+  await upsertFtsEntry(db, input.id);
+
   return input.id;
 }
 
@@ -128,6 +132,11 @@ export async function updateMediaItem(
     values
   );
 
+  // Update FTS index if item was modified
+  if (result.changes > 0) {
+    await upsertFtsEntry(db, id);
+  }
+
   return result.changes > 0;
 }
 
@@ -135,6 +144,9 @@ export async function deleteMediaItem(
   db: SQLite.SQLiteDatabase,
   id: string
 ): Promise<boolean> {
+  // Delete from FTS first
+  await deleteFtsEntry(db, id);
+
   const result = await db.runAsync('DELETE FROM media_items WHERE id = ?', [id]);
   return result.changes > 0;
 }

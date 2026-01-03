@@ -11,9 +11,10 @@ import {
   X,
   Calendar,
   Globe,
+  Tag,
 } from 'lucide-react-native';
 import { MediaItemList } from '@/components/MediaItemList';
-import { MediaItem, MediaType } from '@/lib/storage/types';
+import { MediaItem, MediaType, TagWithCount } from '@/lib/storage/types';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
 import { theme } from '@/lib/theme';
@@ -49,7 +50,11 @@ export default function LibraryScreen() {
   const [availableTypes, setAvailableTypes] = useState<MediaType[]>([]);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
 
-  const hasActiveFilters = typeFilter || sourceDomainFilter || dateRangeFilter;
+  // Tag facets for search results
+  const [tagFacets, setTagFacets] = useState<TagWithCount[]>([]);
+  const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
+
+  const hasActiveFilters = typeFilter || sourceDomainFilter || dateRangeFilter || selectedTagFilters.length > 0;
 
   const getDateRange = useCallback((range: 'today' | 'week' | 'month' | null): { dateFrom?: number; dateTo?: number } => {
     if (!range) return {};
@@ -74,21 +79,55 @@ export default function LibraryScreen() {
       const rawDb = db.getRawDb();
       const dateRange = getDateRange(dateRangeFilter);
 
-      const result = await repos.listMediaItems(rawDb, {
-        searchText: searchQuery || undefined,
-        type: typeFilter || undefined,
-        sourceDomain: sourceDomainFilter || undefined,
-        dateFrom: dateRange.dateFrom,
-        dateTo: dateRange.dateTo,
-        orderBy: 'created_at',
-        orderDirection: sortOrder === 'newest' ? 'DESC' : 'ASC',
-      });
-      setItems(result);
+      // Use FTS search when there's a search query
+      if (searchQuery.trim()) {
+        const ftsResults = await repos.searchMediaItems(rawDb, searchQuery, {
+          type: typeFilter || undefined,
+          sourceDomain: sourceDomainFilter || undefined,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+        });
+
+        // Apply tag filters if any
+        let filteredResults = ftsResults;
+        if (selectedTagFilters.length > 0) {
+          // Get items that have all selected tags
+          const itemsWithTags = await Promise.all(
+            ftsResults.map(async (item) => {
+              const itemTags = await repos.getTagsForItem(rawDb, item.id);
+              const tagNames = itemTags.map(t => t.name);
+              const hasAllTags = selectedTagFilters.every(tag => tagNames.includes(tag));
+              return hasAllTags ? item : null;
+            })
+          );
+          filteredResults = itemsWithTags.filter((item): item is MediaItem => item !== null);
+        }
+
+        setItems(filteredResults);
+
+        // Get tag facets for search results
+        const facets = await repos.getSearchTagFacets(rawDb, searchQuery, 8);
+        setTagFacets(facets);
+      } else {
+        // No search query - use regular listing
+        const result = await repos.listMediaItems(rawDb, {
+          type: typeFilter || undefined,
+          sourceDomain: sourceDomainFilter || undefined,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+          tags: selectedTagFilters.length > 0 ? selectedTagFilters : undefined,
+          orderBy: 'created_at',
+          orderDirection: sortOrder === 'newest' ? 'DESC' : 'ASC',
+        });
+        setItems(result);
+        setTagFacets([]); // Clear facets when not searching
+      }
     } catch (error) {
       console.error('Failed to load items:', error);
       setItems([]);
+      setTagFacets([]);
     }
-  }, [searchQuery, sortOrder, typeFilter, sourceDomainFilter, dateRangeFilter, getDateRange]);
+  }, [searchQuery, sortOrder, typeFilter, sourceDomainFilter, dateRangeFilter, selectedTagFilters, getDateRange]);
 
   const loadFilterOptions = useCallback(async () => {
     try {
@@ -158,6 +197,15 @@ export default function LibraryScreen() {
     setTypeFilter(null);
     setSourceDomainFilter(null);
     setDateRangeFilter(null);
+    setSelectedTagFilters([]);
+  };
+
+  const toggleTagFilter = (tagName: string) => {
+    setSelectedTagFilters(prev =>
+      prev.includes(tagName)
+        ? prev.filter(t => t !== tagName)
+        : [...prev, tagName]
+    );
   };
 
   const openSortMenu = () => setSortMenuVisible(true);
@@ -268,6 +316,18 @@ export default function LibraryScreen() {
                     {dateRangeFilter === 'today' ? 'Today' : dateRangeFilter === 'week' ? 'This Week' : 'This Month'}
                   </Chip>
                 )}
+                {selectedTagFilters.map(tagName => (
+                  <Chip
+                    key={tagName}
+                    compact
+                    onClose={() => toggleTagFilter(tagName)}
+                    style={styles.activeFilterChip}
+                    textStyle={styles.activeFilterText}
+                    icon={() => <Tag size={12} color={theme.colors.primary} />}
+                  >
+                    {tagName}
+                  </Chip>
+                ))}
               </ScrollView>
               <IconButton
                 icon={() => <X size={16} color={theme.colors.onSurfaceVariant} />}
@@ -352,6 +412,31 @@ export default function LibraryScreen() {
           )}
 
           <Divider style={styles.filterDivider} />
+        </View>
+      )}
+
+      {/* Tag facets - shown when searching */}
+      {searchQuery.trim() && tagFacets.length > 0 && (
+        <View style={styles.tagFacetsContainer}>
+          <View style={styles.tagFacetsHeader}>
+            <Tag size={14} color={theme.colors.onSurfaceVariant} />
+            <Text style={styles.tagFacetsLabel}>Filter by tag:</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.chipRow}>
+              {tagFacets.map(tag => (
+                <Chip
+                  key={tag.id}
+                  selected={selectedTagFilters.includes(tag.name)}
+                  onPress={() => toggleTagFilter(tag.name)}
+                  style={styles.tagFacetChip}
+                  compact
+                >
+                  {tag.name} ({tag.usage_count})
+                </Chip>
+              ))}
+            </View>
+          </ScrollView>
         </View>
       )}
 
@@ -494,5 +579,28 @@ const styles = StyleSheet.create({
   },
   activeFilterText: {
     color: theme.colors.onPrimaryContainer,
+  },
+  // Tag facets styles
+  tagFacetsContainer: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+  },
+  tagFacetsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  tagFacetsLabel: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tagFacetChip: {
+    backgroundColor: theme.colors.tertiaryContainer,
   },
 });

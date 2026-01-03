@@ -233,6 +233,37 @@ const migrations: { [version: number]: string } = {
     CREATE INDEX IF NOT EXISTS idx_session_ledger_mode ON session_ledger(mode);
     CREATE INDEX IF NOT EXISTS idx_session_ledger_provider ON session_ledger(provider);
   `,
+  4: `
+    -- FTS5 virtual table for full-text search
+    -- Columns: item_id (for joining), title, text (extracted_text + notes), url, domain, tags_text
+    CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+      item_id UNINDEXED,
+      title,
+      text,
+      url,
+      domain,
+      tags_text,
+      content='',
+      tokenize='porter unicode61'
+    );
+
+    -- Populate FTS index with existing items
+    INSERT INTO items_fts (item_id, title, text, url, domain, tags_text)
+    SELECT
+      m.id,
+      COALESCE(m.title, ''),
+      COALESCE(m.extracted_text, '') || ' ' || COALESCE(m.notes, ''),
+      COALESCE(m.source_url, ''),
+      COALESCE(mm.source_domain, ''),
+      COALESCE((
+        SELECT GROUP_CONCAT(t.name, ' ')
+        FROM item_tags it
+        JOIN tags t ON it.tag_id = t.id
+        WHERE it.item_id = m.id
+      ), '')
+    FROM media_items m
+    LEFT JOIN media_meta mm ON m.id = mm.item_id;
+  `,
 };
 
 /**

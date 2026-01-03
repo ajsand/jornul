@@ -6,3 +6,4 @@ export * from './itemsRepo';
 export * from './tagsRepo';
 export * from './jobsRepo';
 export * from './swipeRepo';
+export * from './ftsRepo';

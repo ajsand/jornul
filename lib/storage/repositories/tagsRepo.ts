@@ -12,6 +12,7 @@ import {
   TagSource,
   TagKind,
 } from '../types';
+import { upsertFtsEntry } from './ftsRepo';
 
 // ============ Tags ============
 
@@ -228,6 +229,9 @@ export async function attachTagToItem(
      VALUES (?, ?, ?, ?, ?)`,
     [itemId, tagId, confidence, source, Date.now()]
   );
+
+  // Update FTS index with new tags
+  await upsertFtsEntry(db, itemId);
 }
 
 export async function detachTagFromItem(
@@ -239,6 +243,12 @@ export async function detachTagFromItem(
     'DELETE FROM item_tags WHERE item_id = ? AND tag_id = ?',
     [itemId, tagId]
   );
+
+  // Update FTS index with removed tag
+  if (result.changes > 0) {
+    await upsertFtsEntry(db, itemId);
+  }
+
   return result.changes > 0;
 }
 
@@ -250,6 +260,12 @@ export async function detachAllTagsFromItem(
     'DELETE FROM item_tags WHERE item_id = ?',
     [itemId]
   );
+
+  // Update FTS index with cleared tags
+  if (result.changes > 0) {
+    await upsertFtsEntry(db, itemId);
+  }
+
   return result.changes;
 }
 
