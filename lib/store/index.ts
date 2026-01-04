@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { JournalItem } from '../storage/db';
-import { BLEDevice, DeviceSignature, SyncResult, PendingSession, PendingSessionStatus } from '../sync/types';
+import {
+  BLEDevice,
+  DeviceSignature,
+  SyncResult,
+  PendingSession,
+  PendingSessionStatus,
+  ConsentConfig,
+  CompareCapsule,
+  ConsentStep,
+  ConsentSession,
+} from '../sync/types';
 
 interface JournalState {
   items: JournalItem[];
@@ -23,6 +33,10 @@ interface SyncState {
   pendingSessions: PendingSession[];
   showQrModal: boolean;
   showScanModal: boolean;
+  // Consent Flow State (Iteration 24)
+  consentSession: ConsentSession;
+  showConsentModal: boolean;
+  showCapsulePreview: boolean;
   // Actions
   setAdvertising: (advertising: boolean) => void;
   setScanning: (scanning: boolean) => void;
@@ -38,15 +52,26 @@ interface SyncState {
   // QR Modal Actions
   setShowQrModal: (show: boolean) => void;
   setShowScanModal: (show: boolean) => void;
+  // Consent Flow Actions (Iteration 24)
+  startConsentFlow: (pendingSessionId: string) => void;
+  updateConsentConfig: (updates: Partial<ConsentConfig>) => void;
+  setCapsule: (capsule: CompareCapsule) => void;
+  setConsentStep: (step: ConsentStep) => void;
+  completeConsent: () => void;
+  cancelConsent: () => void;
+  setShowConsentModal: (show: boolean) => void;
+  setShowCapsulePreview: (show: boolean) => void;
 }
 
 interface SettingsState {
   darkMode: boolean;
   bleEnabled: boolean;
   qrFallback: boolean;
+  hasSeenOnboarding: boolean;
   setDarkMode: (enabled: boolean) => void;
   setBleEnabled: (enabled: boolean) => void;
   setQrFallback: (enabled: boolean) => void;
+  setHasSeenOnboarding: (seen: boolean) => void;
 }
 
 const useJournalStore = create<JournalState>((set, get) => ({
@@ -64,6 +89,23 @@ const useJournalStore = create<JournalState>((set, get) => ({
   },
 }));
 
+// Default consent config
+const defaultConsentConfig: ConsentConfig = {
+  mode: 'friend',
+  selectedTopics: [],
+  includeSensitive: false,
+  useCloud: false,
+  cloudProvider: null,
+};
+
+// Initial consent session state
+const initialConsentSession: ConsentSession = {
+  pendingSessionId: null,
+  config: null,
+  capsule: null,
+  step: 'idle',
+};
+
 const useSyncStore = create<SyncState>((set) => ({
   isAdvertising: false,
   isScanning: false,
@@ -75,7 +117,11 @@ const useSyncStore = create<SyncState>((set) => ({
   pendingSessions: [],
   showQrModal: false,
   showScanModal: false,
-  
+  // Consent Flow State
+  consentSession: initialConsentSession,
+  showConsentModal: false,
+  showCapsulePreview: false,
+
   setAdvertising: (advertising) => set({ isAdvertising: advertising }),
   setScanning: (scanning) => set({ isScanning: scanning }),
   setDiscoveredDevices: (devices) => set({ discoveredDevices: devices }),
@@ -91,7 +137,7 @@ const useSyncStore = create<SyncState>((set) => ({
     isAdvertising: false,
     isScanning: false,
   }),
-  
+
   // Pending Session Actions
   setPendingSessions: (sessions) => set({ pendingSessions: sessions }),
   addPendingSession: (session) => set((state) => ({
@@ -105,19 +151,74 @@ const useSyncStore = create<SyncState>((set) => ({
   removePendingSession: (id) => set((state) => ({
     pendingSessions: state.pendingSessions.filter(s => s.id !== id)
   })),
-  
+
   // QR Modal Actions
   setShowQrModal: (show) => set({ showQrModal: show }),
   setShowScanModal: (show) => set({ showScanModal: show }),
+
+  // Consent Flow Actions (Iteration 24)
+  startConsentFlow: (pendingSessionId) => set({
+    consentSession: {
+      pendingSessionId,
+      config: { ...defaultConsentConfig },
+      capsule: null,
+      step: 'configuring',
+    },
+    showConsentModal: true,
+  }),
+
+  updateConsentConfig: (updates) => set((state) => ({
+    consentSession: {
+      ...state.consentSession,
+      config: state.consentSession.config
+        ? { ...state.consentSession.config, ...updates }
+        : { ...defaultConsentConfig, ...updates },
+    },
+  })),
+
+  setCapsule: (capsule) => set((state) => ({
+    consentSession: {
+      ...state.consentSession,
+      capsule,
+      step: 'reviewing',
+    },
+  })),
+
+  setConsentStep: (step) => set((state) => ({
+    consentSession: {
+      ...state.consentSession,
+      step,
+    },
+  })),
+
+  completeConsent: () => set((state) => ({
+    consentSession: {
+      ...state.consentSession,
+      step: 'ready',
+    },
+    showConsentModal: false,
+    showCapsulePreview: false,
+  })),
+
+  cancelConsent: () => set({
+    consentSession: initialConsentSession,
+    showConsentModal: false,
+    showCapsulePreview: false,
+  }),
+
+  setShowConsentModal: (show) => set({ showConsentModal: show }),
+  setShowCapsulePreview: (show) => set({ showCapsulePreview: show }),
 }));
 
 const useSettingsStore = create<SettingsState>((set) => ({
   darkMode: true,
   bleEnabled: true,
   qrFallback: false,
+  hasSeenOnboarding: false,
   setDarkMode: (enabled) => set({ darkMode: enabled }),
   setBleEnabled: (enabled) => set({ bleEnabled: enabled }),
   setQrFallback: (enabled) => set({ qrFallback: enabled }),
+  setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
 }));
 
 export { useJournalStore, useSyncStore, useSettingsStore };

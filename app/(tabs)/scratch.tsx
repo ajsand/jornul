@@ -18,6 +18,7 @@ import {
   countUrls,
 } from '@/lib/services';
 import { theme } from '@/lib/theme';
+import { successHaptic, lightHaptic, errorHaptic } from '@/lib/utils/haptics';
 
 type ContentType = 'unknown' | 'url' | 'urls' | 'note';
 
@@ -190,11 +191,14 @@ export default function ScratchScreen() {
       const clipboardContent = await Clipboard.getStringAsync();
       if (clipboardContent) {
         setText(clipboardContent);
+        lightHaptic();
       } else {
+        errorHaptic();
         Alert.alert('Empty Clipboard', 'Nothing to paste');
       }
     } catch (error) {
       console.error('Failed to paste:', error);
+      errorHaptic();
       Alert.alert('Error', 'Could not read clipboard');
     }
   }, []);
@@ -264,6 +268,7 @@ export default function ScratchScreen() {
       }
 
       // Success feedback
+      successHaptic();
       const typeLabel = urls.length > 1 ? `${urls.length} Links` : (urls.length === 1 ? 'Link' : 'Note');
       Alert.alert(
         'Saved!',
@@ -277,6 +282,7 @@ export default function ScratchScreen() {
       setText('');
     } catch (error: any) {
       console.error('Failed to save:', error);
+      errorHaptic();
       Alert.alert('Error', `Failed to save: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);

@@ -14,7 +14,31 @@ import {
 } from '../types';
 import { upsertFtsEntry } from './ftsRepo';
 
+// ============ Constants ============
+
+const MAX_TAG_NAME_LENGTH = 100;
+const MIN_TAG_NAME_LENGTH = 1;
+
 // ============ Tags ============
+
+/**
+ * Validate and sanitize tag name
+ * Returns sanitized name or throws error if invalid
+ */
+function validateTagName(name: string): string {
+  const trimmed = name.trim();
+
+  if (trimmed.length < MIN_TAG_NAME_LENGTH) {
+    throw new Error(`Tag name must be at least ${MIN_TAG_NAME_LENGTH} character(s)`);
+  }
+
+  if (trimmed.length > MAX_TAG_NAME_LENGTH) {
+    // Truncate instead of throwing to be forgiving for auto-generated tags
+    return trimmed.slice(0, MAX_TAG_NAME_LENGTH);
+  }
+
+  return trimmed;
+}
 
 /**
  * Generate a URL-safe slug from a tag name
@@ -32,21 +56,22 @@ export async function createTag(
   input: CreateTagInput
 ): Promise<Tag> {
   const now = Date.now();
-  const slug = input.slug ?? generateSlug(input.name);
+  const validatedName = validateTagName(input.name);
+  const slug = input.slug ?? generateSlug(validatedName);
   const kind = input.kind ?? 'manual';
 
   await db.runAsync(
     'INSERT INTO tags (name, slug, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [input.name, slug, kind, now, now]
+    [validatedName, slug, kind, now, now]
   );
 
   const tag = await db.getFirstAsync<Tag>(
     'SELECT * FROM tags WHERE name = ?',
-    [input.name]
+    [validatedName]
   );
 
   if (!tag) {
-    throw new Error(`Failed to create tag: ${input.name}`);
+    throw new Error(`Failed to create tag: ${validatedName}`);
   }
 
   return tag;
@@ -58,21 +83,22 @@ export async function upsertTag(
   kind: TagKind = 'manual'
 ): Promise<Tag> {
   const now = Date.now();
-  const slug = generateSlug(name);
+  const validatedName = validateTagName(name);
+  const slug = generateSlug(validatedName);
 
   // Try to insert, ignore if exists
   await db.runAsync(
     'INSERT OR IGNORE INTO tags (name, slug, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [name, slug, kind, now, now]
+    [validatedName, slug, kind, now, now]
   );
 
   const tag = await db.getFirstAsync<Tag>(
     'SELECT * FROM tags WHERE name = ?',
-    [name]
+    [validatedName]
   );
 
   if (!tag) {
-    throw new Error(`Failed to upsert tag: ${name}`);
+    throw new Error(`Failed to upsert tag: ${validatedName}`);
   }
 
   return tag;

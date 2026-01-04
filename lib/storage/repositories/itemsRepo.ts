@@ -82,6 +82,82 @@ export async function getMediaItem(
   };
 }
 
+/**
+ * Batch fetch multiple items with their tags in a single efficient query
+ * Avoids N+1 query problem when fetching many items
+ */
+export async function getMediaItemsBatch(
+  db: SQLite.SQLiteDatabase,
+  ids: string[]
+): Promise<MediaItemWithTags[]> {
+  if (ids.length === 0) return [];
+
+  // Create placeholders for the IN clause
+  const placeholders = ids.map(() => '?').join(',');
+
+  // Fetch all items
+  const items = await db.getAllAsync<MediaItem>(
+    `SELECT * FROM media_items WHERE id IN (${placeholders})`,
+    ids
+  );
+
+  if (items.length === 0) return [];
+
+  // Fetch all tags for these items in a single query
+  const tagsData = await db.getAllAsync<{
+    item_id: string;
+    id: number;
+    name: string;
+    slug: string | null;
+    kind: string | null;
+    created_at: number;
+    updated_at: number | null;
+    confidence: number | null;
+    source: string;
+  }>(
+    `SELECT it.item_id, t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at, it.confidence, it.source
+     FROM tags t
+     INNER JOIN item_tags it ON t.id = it.tag_id
+     WHERE it.item_id IN (${placeholders})
+     ORDER BY t.name`,
+    ids
+  );
+
+  // Group tags by item_id
+  const tagsByItemId = new Map<string, Array<{
+    id: number;
+    name: string;
+    slug: string | null;
+    kind: string;
+    created_at: number;
+    updated_at: number | null;
+    confidence: number | null;
+    source: string;
+  }>>();
+
+  for (const tag of tagsData) {
+    if (!tagsByItemId.has(tag.item_id)) {
+      tagsByItemId.set(tag.item_id, []);
+    }
+    tagsByItemId.get(tag.item_id)!.push({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      kind: tag.kind || 'manual',
+      created_at: tag.created_at,
+      updated_at: tag.updated_at,
+      confidence: tag.confidence,
+      source: tag.source,
+    });
+  }
+
+  // Combine items with their tags
+  return items.map(item => ({
+    ...item,
+    tags: tagsByItemId.get(item.id) || [],
+  }));
+}
+
 export async function updateMediaItem(
   db: SQLite.SQLiteDatabase,
   id: string,
@@ -213,9 +289,21 @@ export async function listMediaItems(
     query += ' WHERE ' + whereClauses.join(' AND ');
   }
 
+  // Validate orderBy and orderDirection to prevent SQL injection
+  const VALID_ORDER_BY_FIELDS = ['created_at', 'updated_at', 'title', 'type'];
+  const VALID_ORDER_DIRECTIONS = ['ASC', 'DESC'];
+
   const orderBy = filters?.orderBy ?? 'created_at';
   const orderDirection = filters?.orderDirection ?? 'DESC';
-  query += ` ORDER BY m.${orderBy} ${orderDirection}`;
+
+  if (!VALID_ORDER_BY_FIELDS.includes(orderBy)) {
+    throw new Error(`Invalid orderBy field: ${orderBy}. Allowed: ${VALID_ORDER_BY_FIELDS.join(', ')}`);
+  }
+  if (!VALID_ORDER_DIRECTIONS.includes(orderDirection.toUpperCase())) {
+    throw new Error(`Invalid orderDirection: ${orderDirection}. Allowed: ASC, DESC`);
+  }
+
+  query += ` ORDER BY m.${orderBy} ${orderDirection.toUpperCase()}`;
 
   if (filters?.limit) {
     query += ' LIMIT ?';

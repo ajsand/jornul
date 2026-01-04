@@ -1,8 +1,18 @@
 /**
  * Repository - Legacy CRUD operations
  *
- * NOTE: New code should use the modular repositories in ./repositories/
- * This file is maintained for backward compatibility.
+ * @deprecated This file is DEPRECATED. Use the modular repositories in ./repositories/ instead.
+ *
+ * Migration Guide:
+ * - Media Items: Use `import * as repos from '@/lib/storage/repositories'` then `repos.createMediaItem()`
+ * - Tags: Use `repos.upsertTag()`, `repos.getTagsForItem()`, etc.
+ * - Jobs: Use `repos.createJob()`, `repos.getNextJob()`, etc.
+ * - Swipe: Use `repos.createSwipeSession()`, `repos.createSwipeEvent()`, etc.
+ * - FTS Search: Use `repos.searchMediaItems()`, `repos.getSearchTagFacets()`, etc.
+ * - Sync: Use `repos.createPendingSession()`, `repos.getPendingSession()`, etc.
+ * - Compare: Use `repos.createCompareSession()`, `repos.buildCapsule()`, etc.
+ *
+ * This file will be removed in a future version.
  */
 
 import * as SQLite from 'expo-sqlite';
@@ -34,6 +44,7 @@ import {
 } from './types';
 
 // Re-export new modular repositories for new code
+// All new code should import directly from './repositories' instead
 export * from './repositories';
 
 // ============ Media Items ============
@@ -720,6 +731,7 @@ export async function deleteIngestItem(
   const result = await db.runAsync('DELETE FROM ingest_queue WHERE id = ?', [id]);
   return result.changes > 0;
 }
+
 
 
 

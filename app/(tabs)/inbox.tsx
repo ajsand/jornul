@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
-import { Appbar, Text, Card, Chip, IconButton, ProgressBar } from 'react-native-paper';
+import { Appbar, Text, Card, Chip, IconButton, ProgressBar, Button, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -16,6 +16,7 @@ import {
   Music,
   Video,
   FileType,
+  RotateCcw,
 } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
@@ -27,6 +28,9 @@ import {
   getJobStats,
   registerAllJobHandlers,
   getBatchProgress,
+  retryJob,
+  retryAllFailed,
+  getMaxRetries,
 } from '@/lib/services';
 import { theme } from '@/lib/theme';
 
@@ -72,6 +76,9 @@ export default function InboxScreen() {
   const [stats, setStats] = useState({ pending: 0, running: 0, done: 0, failed: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [runnerActive, setRunnerActive] = useState(false);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
 
   const loadJobs = useCallback(async () => {
     try {
@@ -199,6 +206,44 @@ export default function InboxScreen() {
     }
   };
 
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    setRetryingJobId(jobId);
+    try {
+      const success = await retryJob(jobId);
+      if (success) {
+        showSnackbar('Job queued for retry');
+        await loadJobs();
+      } else {
+        showSnackbar('Failed to retry job');
+      }
+    } catch (error) {
+      console.error('Retry job error:', error);
+      showSnackbar('Error retrying job');
+    } finally {
+      setRetryingJobId(null);
+    }
+  };
+
+  const handleRetryAllFailed = async () => {
+    try {
+      const count = await retryAllFailed();
+      if (count > 0) {
+        showSnackbar(`${count} job${count > 1 ? 's' : ''} queued for retry`);
+        await loadJobs();
+      } else {
+        showSnackbar('No retryable jobs found');
+      }
+    } catch (error) {
+      console.error('Retry all error:', error);
+      showSnackbar('Error retrying jobs');
+    }
+  };
+
   const getItemIcon = (job: JobWithItem) => {
     if (job.kind === 'batch_import') {
       return <FolderUp size={20} color={theme.colors.tertiary} />;
@@ -282,10 +327,33 @@ export default function InboxScreen() {
             />
           )}
 
-          {job.status === 'failed' && job.error && (
-            <Text variant="bodySmall" style={styles.errorText} numberOfLines={2}>
-              {job.error}
-            </Text>
+          {job.status === 'failed' && (
+            <View style={styles.failedSection}>
+              {job.error && (
+                <Text variant="bodySmall" style={styles.errorText} numberOfLines={2}>
+                  {job.error}
+                </Text>
+              )}
+              <View style={styles.retryRow}>
+                <Text variant="labelSmall" style={styles.retryInfo}>
+                  {job.retry_count > 0
+                    ? `Retried ${job.retry_count}/${getMaxRetries()} times`
+                    : 'Not retried yet'}
+                </Text>
+                <Button
+                  mode="outlined"
+                  compact
+                  icon={() => <RotateCcw size={14} color={theme.colors.primary} />}
+                  onPress={() => handleRetryJob(job.id)}
+                  loading={retryingJobId === job.id}
+                  disabled={retryingJobId !== null}
+                  style={styles.retryButton}
+                  labelStyle={styles.retryButtonLabel}
+                >
+                  Retry
+                </Button>
+              </View>
+            </View>
           )}
 
           <Text variant="labelSmall" style={styles.timestamp}>
@@ -297,32 +365,47 @@ export default function InboxScreen() {
   };
 
   const renderHeader = () => (
-    <View style={styles.statsContainer}>
-      <Chip icon={() => <Clock size={14} color={theme.colors.onSurfaceVariant} />} compact>
-        {stats.pending} queued
-      </Chip>
-      <Chip
-        icon={() => <Play size={14} color={theme.colors.primary} />}
-        compact
-        style={styles.statChip}
-      >
-        {stats.running} running
-      </Chip>
-      <Chip
-        icon={() => <CheckCircle size={14} color={theme.colors.tertiary} />}
-        compact
-        style={styles.statChip}
-      >
-        {stats.done} done
-      </Chip>
-      {stats.failed > 0 && (
+    <View style={styles.headerSection}>
+      <View style={styles.statsContainer}>
+        <Chip icon={() => <Clock size={14} color={theme.colors.onSurfaceVariant} />} compact>
+          {stats.pending} queued
+        </Chip>
         <Chip
-          icon={() => <XCircle size={14} color={theme.colors.error} />}
+          icon={() => <Play size={14} color={theme.colors.primary} />}
           compact
           style={styles.statChip}
         >
-          {stats.failed} failed
+          {stats.running} running
         </Chip>
+        <Chip
+          icon={() => <CheckCircle size={14} color={theme.colors.tertiary} />}
+          compact
+          style={styles.statChip}
+        >
+          {stats.done} done
+        </Chip>
+        {stats.failed > 0 && (
+          <Chip
+            icon={() => <XCircle size={14} color={theme.colors.error} />}
+            compact
+            style={styles.statChip}
+          >
+            {stats.failed} failed
+          </Chip>
+        )}
+      </View>
+      {stats.failed > 0 && (
+        <View style={styles.retryAllContainer}>
+          <Button
+            mode="outlined"
+            compact
+            icon={() => <RotateCcw size={16} color={theme.colors.primary} />}
+            onPress={handleRetryAllFailed}
+            style={styles.retryAllButton}
+          >
+            Retry All Failed
+          </Button>
+        </View>
       )}
     </View>
   );
@@ -370,6 +453,15 @@ export default function InboxScreen() {
         }
         ListEmptyComponent={renderEmpty}
       />
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -386,14 +478,23 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     fontWeight: '600',
   },
+  headerSection: {
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+  },
   statsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 12,
     gap: 8,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outline,
+  },
+  retryAllContainer: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  retryAllButton: {
+    borderColor: theme.colors.primary,
   },
   statChip: {
     backgroundColor: theme.colors.surfaceVariant,
@@ -449,13 +550,44 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
+  failedSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.errorContainer,
+    backgroundColor: theme.colors.errorContainer,
+    marginHorizontal: -16,
+    marginBottom: -12,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
   errorText: {
     color: theme.colors.error,
+  },
+  retryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: 8,
+  },
+  retryInfo: {
+    color: theme.colors.onErrorContainer,
+    flex: 1,
+  },
+  retryButton: {
+    borderColor: theme.colors.error,
+  },
+  retryButtonLabel: {
+    fontSize: 12,
   },
   timestamp: {
     color: theme.colors.onSurfaceVariant,
     marginTop: 8,
+  },
+  snackbar: {
+    backgroundColor: theme.colors.inverseSurface,
   },
   emptyState: {
     flex: 1,

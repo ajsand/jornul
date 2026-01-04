@@ -278,6 +278,17 @@ const migrations: { [version: number]: string } = {
     CREATE INDEX IF NOT EXISTS idx_pending_sessions_status ON pending_sessions(status);
     CREATE INDEX IF NOT EXISTS idx_pending_sessions_imported_at ON pending_sessions(imported_at);
   `,
+  6: `
+    -- Add retry_count and last_error_at to jobs table for retry logic
+    ALTER TABLE jobs ADD COLUMN retry_count INTEGER DEFAULT 0;
+    ALTER TABLE jobs ADD COLUMN last_error_at INTEGER;
+
+    -- Add expires_at to pending_sessions for auto-cleanup
+    ALTER TABLE pending_sessions ADD COLUMN expires_at INTEGER;
+
+    -- Update existing pending_sessions to have an expiration (7 days from import)
+    UPDATE pending_sessions SET expires_at = imported_at + 604800000 WHERE expires_at IS NULL;
+  `,
 };
 
 /**

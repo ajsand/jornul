@@ -268,6 +268,8 @@ export interface Job {
   payload_json: string | null;
   progress: number;
   error: string | null;
+  retry_count: number;
+  last_error_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -283,6 +285,8 @@ export interface UpdateJobInput {
   payload_json?: string | null;
   progress?: number;
   error?: string | null;
+  retry_count?: number;
+  last_error_at?: number | null;
 }
 
 export interface ListJobsFilters {
@@ -447,6 +451,7 @@ export interface UpdateTagInput {
   slug?: string | null;
   kind?: TagKind;
 }
+
 
 
 

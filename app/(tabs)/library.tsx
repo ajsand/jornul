@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
-import { Appbar, Text, Searchbar, Menu, IconButton, Chip, Divider } from 'react-native-paper';
+import {
+  View,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  useWindowDimensions,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from 'react-native';
+import { Appbar, Text, Searchbar, Menu, IconButton, Chip, Divider, TouchableRipple } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -12,12 +21,22 @@ import {
   Calendar,
   Globe,
   Tag,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
 import { MediaItemList } from '@/components/MediaItemList';
 import { MediaItem, MediaType, TagWithCount } from '@/lib/storage/types';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
 import { theme } from '@/lib/theme';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// Breakpoint for compact mode
+const SMALL_SCREEN_WIDTH = 380;
 
 type SortOrder = 'newest' | 'oldest';
 type ViewMode = 'list' | 'grid';
@@ -32,6 +51,9 @@ const MEDIA_TYPE_LABELS: Record<MediaType, string> = {
 };
 
 export default function LibraryScreen() {
+  const { width: screenWidth } = useWindowDimensions();
+  const isCompact = screenWidth < SMALL_SCREEN_WIDTH;
+
   const [items, setItems] = useState<MediaItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
@@ -46,6 +68,9 @@ export default function LibraryScreen() {
   const [sourceDomainFilter, setSourceDomainFilter] = useState<string | null>(null);
   const [dateRangeFilter, setDateRangeFilter] = useState<'today' | 'week' | 'month' | null>(null);
 
+  // Collapsible sections for compact mode
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['type', 'date', 'source']));
+
   // Available filter options
   const [availableTypes, setAvailableTypes] = useState<MediaType[]>([]);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
@@ -55,6 +80,19 @@ export default function LibraryScreen() {
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
 
   const hasActiveFilters = typeFilter || sourceDomainFilter || dateRangeFilter || selectedTagFilters.length > 0;
+
+  const toggleFilterSection = useCallback((section: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
+  }, []);
 
   const getDateRange = useCallback((range: 'today' | 'week' | 'month' | null): { dateFrom?: number; dateTo?: number } => {
     if (!range) return {};
@@ -333,15 +371,34 @@ export default function LibraryScreen() {
                 icon={() => <X size={16} color={theme.colors.onSurfaceVariant} />}
                 size={20}
                 onPress={clearFilters}
+                accessibilityLabel="Clear all filters"
               />
             </View>
           )}
 
           <Divider style={styles.filterDivider} />
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionLabel}>Type</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {/* Type filter section - collapsible on small screens */}
+          <TouchableRipple
+            onPress={isCompact ? () => toggleFilterSection('type') : undefined}
+            style={styles.filterSectionHeader}
+          >
+            <View style={styles.filterSectionHeaderContent}>
+              <Text style={[styles.filterSectionLabel, typeFilter && styles.filterSectionLabelActive]}>
+                Type
+              </Text>
+              {typeFilter && !expandedSections.has('type') && (
+                <Chip compact style={styles.collapsedValueChip}>{MEDIA_TYPE_LABELS[typeFilter]}</Chip>
+              )}
+              {isCompact && (
+                expandedSections.has('type')
+                  ? <ChevronUp size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+                  : <ChevronDown size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+              )}
+            </View>
+          </TouchableRipple>
+          {(!isCompact || expandedSections.has('type')) && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterSectionContent}>
               <View style={styles.chipRow}>
                 {availableTypes.map(type => (
                   <Chip
@@ -356,11 +413,31 @@ export default function LibraryScreen() {
                 ))}
               </View>
             </ScrollView>
-          </View>
+          )}
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionLabel}>Date</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {/* Date filter section - collapsible on small screens */}
+          <TouchableRipple
+            onPress={isCompact ? () => toggleFilterSection('date') : undefined}
+            style={styles.filterSectionHeader}
+          >
+            <View style={styles.filterSectionHeaderContent}>
+              <Text style={[styles.filterSectionLabel, dateRangeFilter && styles.filterSectionLabelActive]}>
+                Date
+              </Text>
+              {dateRangeFilter && !expandedSections.has('date') && (
+                <Chip compact style={styles.collapsedValueChip}>
+                  {dateRangeFilter === 'today' ? 'Today' : dateRangeFilter === 'week' ? 'Week' : 'Month'}
+                </Chip>
+              )}
+              {isCompact && (
+                expandedSections.has('date')
+                  ? <ChevronUp size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+                  : <ChevronDown size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+              )}
+            </View>
+          </TouchableRipple>
+          {(!isCompact || expandedSections.has('date')) && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterSectionContent}>
               <View style={styles.chipRow}>
                 <Chip
                   selected={dateRangeFilter === 'today'}
@@ -388,27 +465,47 @@ export default function LibraryScreen() {
                 </Chip>
               </View>
             </ScrollView>
-          </View>
+          )}
 
+          {/* Source domain filter section - collapsible on small screens */}
           {availableDomains.length > 0 && (
-            <View style={styles.filterSection}>
-              <Text style={styles.filterSectionLabel}>Source</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.chipRow}>
-                  {availableDomains.map(domain => (
-                    <Chip
-                      key={domain}
-                      selected={sourceDomainFilter === domain}
-                      onPress={() => setSourceDomainFilter(sourceDomainFilter === domain ? null : domain)}
-                      style={styles.filterChip}
-                      compact
-                    >
-                      {domain}
-                    </Chip>
-                  ))}
+            <>
+              <TouchableRipple
+                onPress={isCompact ? () => toggleFilterSection('source') : undefined}
+                style={styles.filterSectionHeader}
+              >
+                <View style={styles.filterSectionHeaderContent}>
+                  <Text style={[styles.filterSectionLabel, sourceDomainFilter && styles.filterSectionLabelActive]}>
+                    Source
+                  </Text>
+                  {sourceDomainFilter && !expandedSections.has('source') && (
+                    <Chip compact style={styles.collapsedValueChip}>{sourceDomainFilter}</Chip>
+                  )}
+                  {isCompact && (
+                    expandedSections.has('source')
+                      ? <ChevronUp size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+                      : <ChevronDown size={16} color={theme.colors.onSurfaceVariant} style={styles.expandIcon} />
+                  )}
                 </View>
-              </ScrollView>
-            </View>
+              </TouchableRipple>
+              {(!isCompact || expandedSections.has('source')) && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterSectionContent}>
+                  <View style={styles.chipRow}>
+                    {availableDomains.map(domain => (
+                      <Chip
+                        key={domain}
+                        selected={sourceDomainFilter === domain}
+                        onPress={() => setSourceDomainFilter(sourceDomainFilter === domain ? null : domain)}
+                        style={styles.filterChip}
+                        compact
+                      >
+                        {domain}
+                      </Chip>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+            </>
           )}
 
           <Divider style={styles.filterDivider} />
@@ -545,16 +642,35 @@ const styles = StyleSheet.create({
   filterDivider: {
     backgroundColor: theme.colors.outline,
   },
-  filterSection: {
-    paddingVertical: 8,
+  filterSectionHeader: {
+    paddingVertical: 10,
     paddingHorizontal: 16,
+  },
+  filterSectionHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterSectionContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   filterSectionLabel: {
     fontSize: 12,
     color: theme.colors.onSurfaceVariant,
-    marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  filterSectionLabelActive: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  expandIcon: {
+    marginLeft: 'auto',
+  },
+  collapsedValueChip: {
+    marginLeft: 8,
+    backgroundColor: theme.colors.primaryContainer,
+    height: 24,
   },
   chipRow: {
     flexDirection: 'row',

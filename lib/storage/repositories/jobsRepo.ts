@@ -65,6 +65,14 @@ export async function updateJob(
     fields.push('error = ?');
     values.push(updates.error);
   }
+  if (updates.retry_count !== undefined) {
+    fields.push('retry_count = ?');
+    values.push(updates.retry_count);
+  }
+  if (updates.last_error_at !== undefined) {
+    fields.push('last_error_at = ?');
+    values.push(updates.last_error_at);
+  }
 
   if (fields.length === 0) return false;
 
@@ -192,6 +200,72 @@ export async function cancelJob(
   id: string
 ): Promise<boolean> {
   return updateJob(db, id, { status: 'cancelled' });
+}
+
+/**
+ * Requeue a failed job for retry
+ * Resets status to pending so it can be picked up again
+ */
+export async function requeueJob(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<boolean> {
+  return updateJob(db, id, {
+    status: 'pending',
+    error: null,
+    progress: 0,
+  });
+}
+
+/**
+ * Increment retry count and mark as pending for automatic retry
+ */
+export async function incrementRetryAndRequeue(
+  db: SQLite.SQLiteDatabase,
+  id: string,
+  error: string
+): Promise<boolean> {
+  const job = await getJob(db, id);
+  if (!job) return false;
+
+  return updateJob(db, id, {
+    status: 'pending',
+    retry_count: (job.retry_count || 0) + 1,
+    last_error_at: Date.now(),
+    error,
+    progress: 0,
+  });
+}
+
+/**
+ * List failed jobs that can be retried (retry_count < maxRetries)
+ */
+export async function listRetryableJobs(
+  db: SQLite.SQLiteDatabase,
+  maxRetries: number = 3
+): Promise<Job[]> {
+  return await db.getAllAsync<Job>(
+    `SELECT * FROM jobs
+     WHERE status = 'failed' AND (retry_count IS NULL OR retry_count < ?)
+     ORDER BY created_at ASC`,
+    [maxRetries]
+  );
+}
+
+/**
+ * Retry all failed jobs that haven't exceeded max retries
+ */
+export async function retryAllFailedJobs(
+  db: SQLite.SQLiteDatabase,
+  maxRetries: number = 3
+): Promise<number> {
+  const result = await db.runAsync(
+    `UPDATE jobs
+     SET status = 'pending', error = NULL, progress = 0, updated_at = ?
+     WHERE status = 'failed' AND (retry_count IS NULL OR retry_count < ?)`,
+    [Date.now(), maxRetries]
+  );
+  return result.changes;
 }
 
 export async function cleanupOldJobs(

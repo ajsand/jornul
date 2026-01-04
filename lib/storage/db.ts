@@ -28,7 +28,11 @@ import type {
   IngestStatus,
 } from './types';
 
-// Legacy type for backward compatibility
+/**
+ * @deprecated Use MediaItemWithTags from './types' instead.
+ * This legacy type is kept for backward compatibility with older store code.
+ * Will be removed in a future iteration when store is migrated to MediaItemWithTags.
+ */
 export interface JournalItem {
   id: string;
   type: 'text' | 'image' | 'audio';

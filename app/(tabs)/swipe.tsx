@@ -33,6 +33,8 @@ import { ensureCatalogSeeded } from '@/lib/services/swipeCatalogSeeder';
 import { getRankedBatch, RankReason, DEFAULT_CONFIG, computePreferences, PreferenceProfile } from '@/lib/services/swipe/ranker';
 import { processSwipeFeedback } from '@/lib/services/aets/feedback';
 import { theme } from '@/lib/theme';
+import { swipeHaptic, successHaptic, lightHaptic } from '@/lib/utils/haptics';
+import { buttonA11y, swipeCardA11y, announceForAccessibility } from '@/lib/utils/accessibility';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
@@ -132,6 +134,15 @@ export default function SwipeScreen() {
 
     const currentCard = cards[currentIndex];
 
+    // Announce for accessibility
+    const actionLabels: Record<SwipeDecision, string> = {
+      like: 'Liked',
+      dislike: 'Disliked',
+      skip: 'Skipped',
+      super_like: 'Super liked',
+    };
+    announceForAccessibility(`${actionLabels[decision]} ${currentCard.title}`);
+
     // Record swipe event
     if (sessionId) {
       try {
@@ -163,23 +174,28 @@ export default function SwipeScreen() {
   }, [currentIndex, cards, sessionId]);
 
   const swipeLeft = () => {
+    swipeHaptic();
     animateSwipe('left', () => handleSwipe('dislike'));
   };
 
   const swipeRight = () => {
+    swipeHaptic();
     animateSwipe('right', () => handleSwipe('like'));
   };
 
   const swipeUp = () => {
+    successHaptic();
     animateSwipe('up', () => handleSwipe('super_like'));
   };
 
   const handleSkip = () => {
+    lightHaptic();
     handleSwipe('skip');
   };
 
   const handleUndo = async () => {
     if (swipeHistory.length === 0 || currentIndex === 0) return;
+    lightHaptic();
 
     const lastSwipe = swipeHistory[swipeHistory.length - 1];
 
@@ -465,6 +481,20 @@ export default function SwipeScreen() {
                   ],
                 },
               ]}
+              {...swipeCardA11y(currentCard.title, currentIndex, cards.length)}
+              onAccessibilityAction={(event) => {
+                switch (event.nativeEvent.actionName) {
+                  case 'magicTap':
+                    swipeUp();
+                    break;
+                  case 'escape':
+                    swipeLeft();
+                    break;
+                  case 'activate':
+                    swipeRight();
+                    break;
+                }
+              }}
             >
               {/* Like overlay */}
               <Animated.View style={[styles.overlayLabel, styles.likeLabel, { opacity: likeOpacity }]}>
@@ -516,7 +546,7 @@ export default function SwipeScreen() {
 
       {/* Action buttons */}
       {currentIndex < cards.length && (
-        <View style={styles.actions}>
+        <View style={styles.actions} accessibilityRole="toolbar">
           <IconButton
             icon={() => <RotateCcw size={20} color={theme.colors.onSurfaceVariant} />}
             mode="contained"
@@ -524,6 +554,10 @@ export default function SwipeScreen() {
             size={24}
             onPress={handleUndo}
             disabled={swipeHistory.length === 0}
+            {...buttonA11y('Undo last swipe', {
+              hint: 'Go back to the previous card',
+              disabled: swipeHistory.length === 0,
+            })}
           />
           <IconButton
             icon={() => <X size={32} color={theme.colors.error} />}
@@ -531,6 +565,7 @@ export default function SwipeScreen() {
             containerColor={theme.colors.errorContainer}
             size={40}
             onPress={swipeLeft}
+            {...buttonA11y('Dislike', { hint: 'Swipe this card left to dislike' })}
           />
           <IconButton
             icon={() => <SkipForward size={20} color={theme.colors.onSurfaceVariant} />}
@@ -538,6 +573,7 @@ export default function SwipeScreen() {
             containerColor={theme.colors.surfaceVariant}
             size={24}
             onPress={handleSkip}
+            {...buttonA11y('Skip', { hint: 'Skip this card without rating' })}
           />
           <IconButton
             icon={() => <Heart size={32} color="#4CAF50" />}
@@ -545,6 +581,7 @@ export default function SwipeScreen() {
             containerColor="#E8F5E9"
             size={40}
             onPress={swipeRight}
+            {...buttonA11y('Like', { hint: 'Swipe this card right to like' })}
           />
           <IconButton
             icon={() => <Star size={20} color="#FFD700" />}
@@ -552,6 +589,7 @@ export default function SwipeScreen() {
             containerColor="#FFF8E1"
             size={24}
             onPress={swipeUp}
+            {...buttonA11y('Super Like', { hint: 'Swipe up to super like this card' })}
           />
         </View>
       )}

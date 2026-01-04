@@ -21,5 +21,24 @@ export const theme = {
     outline: '#404040',
     error: '#CF6679',
     onError: '#FFFFFF',
+    // Accessibility focus colors
+    focus: '#90CAF9', // Light Blue for high contrast focus rings
+    focusOutline: '#42A5F5', // Slightly darker for borders
+  },
+};
+
+/**
+ * Accessibility styling helpers
+ */
+export const a11yStyles = {
+  /** Focus ring style for custom touchable components */
+  focusRing: {
+    borderWidth: 2,
+    borderColor: theme.colors.focus,
+  },
+  /** Minimum touch target size (44x44 per WCAG) */
+  minTouchTarget: {
+    minWidth: 44,
+    minHeight: 44,
   },
 };

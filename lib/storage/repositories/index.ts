@@ -8,3 +8,4 @@ export * from './jobsRepo';
 export * from './swipeRepo';
 export * from './ftsRepo';
 export * from './syncRepo';
+export * from './compareRepo';

@@ -30,6 +30,8 @@ import { BarCodeScanner, BarCodeScannerResult } from 'expo-barcode-scanner';
 import { v4 as uuidv4 } from 'uuid';
 
 import { InsightCard } from '@/components/InsightCard';
+import { ConsentScreen } from '@/components/ConsentScreen';
+import { CapsulePreview } from '@/components/CapsulePreview';
 import { useSyncStore, useSettingsStore } from '@/lib/store';
 import { BLEManager } from '@/lib/sync/ble';
 import {
@@ -42,6 +44,7 @@ import {
 import { DeviceSignature, PendingSession } from '@/lib/sync/types';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
+import { getCategoryCounts } from '@/lib/services/capsuleBuilder';
 import { theme } from '@/lib/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -58,6 +61,10 @@ export default function SyncScreen() {
     pendingSessions,
     showQrModal,
     showScanModal,
+    // Consent flow state
+    consentSession,
+    showConsentModal,
+    showCapsulePreview,
     setAdvertising,
     setScanning,
     addDiscoveredDevice,
@@ -69,6 +76,11 @@ export default function SyncScreen() {
     removePendingSession,
     setShowQrModal,
     setShowScanModal,
+    // Consent flow actions
+    startConsentFlow,
+    completeConsent,
+    cancelConsent,
+    setShowCapsulePreview,
   } = useSyncStore();
 
   const { bleEnabled } = useSettingsStore();
@@ -215,26 +227,82 @@ export default function SyncScreen() {
   // ========== Pending Session Actions ==========
 
   const handleAcceptSession = async (session: PendingSession) => {
+    // Start consent flow instead of immediately accepting
+    startConsentFlow(session.id);
+  };
+
+  // Handle consent flow completion
+  const handleConsentComplete = async () => {
     try {
+      if (!consentSession.config || !consentSession.capsule || !consentSession.pendingSessionId) {
+        throw new Error('Invalid consent session state');
+      }
+
       await db.init();
       const rawDb = db.getRawDb();
-      await repos.updatePendingSessionStatus(rawDb, session.id, 'accepted');
-      updatePendingSessionStatus(session.id, 'accepted');
+
+      // Find the pending session
+      const pendingSession = pendingSessions.find((s) => s.id === consentSession.pendingSessionId);
+      if (!pendingSession) {
+        throw new Error('Pending session not found');
+      }
+
+      // Create session ledger for audit
+      const ledgerId = uuidv4();
+      const categoryCounts = getCategoryCounts(consentSession.capsule);
+      await repos.createSessionLedger(rawDb, {
+        id: ledgerId,
+        mode: consentSession.config.mode,
+        provider: consentSession.config.cloudProvider,
+        excerpt_counts_json: JSON.stringify(categoryCounts),
+        sensitive_included: consentSession.config.includeSensitive,
+        token_estimate: consentSession.capsule.tokenEstimate,
+      });
+
+      // Store capsule items in compare_session_items
+      for (const item of consentSession.capsule.items) {
+        await repos.insertCompareSessionItem(
+          rawDb,
+          consentSession.capsule.sessionId,
+          item.itemId,
+          item.shareLevel
+        );
+      }
+
+      // Update pending session status
+      await repos.updatePendingSessionStatus(rawDb, consentSession.pendingSessionId, 'accepted');
+      updatePendingSessionStatus(consentSession.pendingSessionId, 'accepted');
+
+      // Complete consent flow
+      completeConsent();
+
+      // Build my signature if not already built
+      let mySig = signature;
+      if (!mySig) {
+        mySig = await buildSignature();
+        setSignature(mySig);
+      }
 
       // Compare signatures and show result
-      if (signature) {
-        const result = compare(signature, session.importedSignature);
-        Alert.alert(
-          'Session Accepted',
-          `You share ${result.sharedTags.length} interests with this person!`
-        );
-      } else {
-        Alert.alert('Session Accepted', 'The session has been accepted.');
-      }
+      const result = compare(mySig, pendingSession.importedSignature);
+      setSyncResult(
+        { id: pendingSession.deviceId, name: `Device ${pendingSession.deviceId.slice(0, 8)}` },
+        result
+      );
+
+      Alert.alert(
+        'Compare Complete!',
+        `Found ${result.sharedTags.length} shared interests. Check out your insights!`
+      );
     } catch (error) {
-      console.error('Failed to accept session:', error);
-      Alert.alert('Error', 'Failed to accept session. Please try again.');
+      console.error('Failed to complete consent:', error);
+      Alert.alert('Error', 'Failed to complete comparison. Please try again.');
     }
+  };
+
+  // Handle consent cancellation
+  const handleConsentCancel = () => {
+    cancelConsent();
   };
 
   const handleRejectSession = async (session: PendingSession) => {
@@ -584,6 +652,46 @@ export default function SyncScreen() {
           </View>
           <Text style={styles.scannerHint}>Point your camera at a JournalLink QR code</Text>
         </SafeAreaView>
+      </Modal>
+
+      {/* Consent Screen Modal */}
+      <Modal
+        visible={showConsentModal && !showCapsulePreview}
+        animationType="slide"
+        onRequestClose={handleConsentCancel}
+      >
+        {consentSession.pendingSessionId && (
+          <ConsentScreen
+            pendingSession={
+              pendingSessions.find((s) => s.id === consentSession.pendingSessionId) || {
+                id: consentSession.pendingSessionId,
+                deviceId: 'unknown',
+                importedSignature: {
+                  deviceId: 'unknown',
+                  topTags: [],
+                  swipeSummary: { totalLikes: 0, totalFavorites: 0, topLikedTags: [], topFavoritedTags: [] },
+                  createdAt: Date.now(),
+                },
+                importedAt: Date.now(),
+                status: 'awaiting_consent',
+              }
+            }
+            onCancel={handleConsentCancel}
+            onComplete={handleConsentComplete}
+          />
+        )}
+      </Modal>
+
+      {/* Capsule Preview Modal */}
+      <Modal
+        visible={showCapsulePreview}
+        animationType="slide"
+        onRequestClose={() => setShowCapsulePreview(false)}
+      >
+        <CapsulePreview
+          onBack={() => setShowCapsulePreview(false)}
+          onConfirm={handleConsentComplete}
+        />
       </Modal>
     </SafeAreaView>
   );
