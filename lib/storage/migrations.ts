@@ -264,6 +264,20 @@ const migrations: { [version: number]: string } = {
     FROM media_items m
     LEFT JOIN media_meta mm ON m.id = mm.item_id;
   `,
+  5: `
+    -- Pending sessions for QR signature exchange (Iteration 23)
+    -- Stores imported signatures awaiting user consent
+    CREATE TABLE IF NOT EXISTS pending_sessions (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      signature_json TEXT NOT NULL,
+      imported_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'awaiting_consent' CHECK(status IN ('awaiting_consent', 'accepted', 'rejected'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pending_sessions_status ON pending_sessions(status);
+    CREATE INDEX IF NOT EXISTS idx_pending_sessions_imported_at ON pending_sessions(imported_at);
+  `,
 };
 
 /**

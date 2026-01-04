@@ -7,3 +7,4 @@ export * from './tagsRepo';
 export * from './jobsRepo';
 export * from './swipeRepo';
 export * from './ftsRepo';
+export * from './syncRepo';

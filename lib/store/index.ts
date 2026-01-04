@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { JournalItem } from '../storage/db';
-import { BLEDevice, DeviceSignature, SyncResult } from '../sync/types';
+import { BLEDevice, DeviceSignature, SyncResult, PendingSession, PendingSessionStatus } from '../sync/types';
 
 interface JournalState {
   items: JournalItem[];
@@ -19,12 +19,25 @@ interface SyncState {
     device: BLEDevice | null;
     result: SyncResult | null;
   };
+  // QR/Signature Exchange
+  pendingSessions: PendingSession[];
+  showQrModal: boolean;
+  showScanModal: boolean;
+  // Actions
   setAdvertising: (advertising: boolean) => void;
   setScanning: (scanning: boolean) => void;
   setDiscoveredDevices: (devices: BLEDevice[]) => void;
   addDiscoveredDevice: (device: BLEDevice) => void;
   setSyncResult: (device: BLEDevice, result: SyncResult) => void;
   clearSync: () => void;
+  // Pending Session Actions
+  setPendingSessions: (sessions: PendingSession[]) => void;
+  addPendingSession: (session: PendingSession) => void;
+  updatePendingSessionStatus: (id: string, status: PendingSessionStatus) => void;
+  removePendingSession: (id: string) => void;
+  // QR Modal Actions
+  setShowQrModal: (show: boolean) => void;
+  setShowScanModal: (show: boolean) => void;
 }
 
 interface SettingsState {
@@ -59,6 +72,10 @@ const useSyncStore = create<SyncState>((set) => ({
     device: null,
     result: null,
   },
+  pendingSessions: [],
+  showQrModal: false,
+  showScanModal: false,
+  
   setAdvertising: (advertising) => set({ isAdvertising: advertising }),
   setScanning: (scanning) => set({ isScanning: scanning }),
   setDiscoveredDevices: (devices) => set({ discoveredDevices: devices }),
@@ -74,6 +91,24 @@ const useSyncStore = create<SyncState>((set) => ({
     isAdvertising: false,
     isScanning: false,
   }),
+  
+  // Pending Session Actions
+  setPendingSessions: (sessions) => set({ pendingSessions: sessions }),
+  addPendingSession: (session) => set((state) => ({
+    pendingSessions: [session, ...state.pendingSessions.filter(s => s.id !== session.id)]
+  })),
+  updatePendingSessionStatus: (id, status) => set((state) => ({
+    pendingSessions: state.pendingSessions.map(s =>
+      s.id === id ? { ...s, status } : s
+    )
+  })),
+  removePendingSession: (id) => set((state) => ({
+    pendingSessions: state.pendingSessions.filter(s => s.id !== id)
+  })),
+  
+  // QR Modal Actions
+  setShowQrModal: (show) => set({ showQrModal: show }),
+  setShowScanModal: (show) => set({ showScanModal: show }),
 }));
 
 const useSettingsStore = create<SettingsState>((set) => ({
