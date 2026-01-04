@@ -11,7 +11,11 @@
       "Skill(it07)",
       "Bash(npm install:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Skill(it14)",
+      "Skill(it15)",
+      "mcp__ide__getDiagnostics",
+      "Bash(dir:*)"
     ]
   }
 }

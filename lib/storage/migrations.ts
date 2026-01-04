@@ -407,9 +407,26 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
 
     console.log(`Applying migration ${version}...`);
-    await db.execAsync(sql);
-    await recordMigration(db, version);
-    console.log(`Migration ${version} applied successfully`);
+
+    // Migration 4 (FTS5) may fail on web - handle gracefully
+    if (version === 4) {
+      try {
+        await db.execAsync(sql);
+        console.log(`Migration ${version} applied successfully`);
+      } catch (error: any) {
+        if (error?.message?.includes('fts5') || error?.message?.includes('no such module')) {
+          console.warn(`Migration ${version} (FTS5) skipped - not supported on this platform`);
+          console.warn('Full-text search will use fallback LIKE queries');
+        } else {
+          throw error; // Re-throw if it's a different error
+        }
+      }
+      await recordMigration(db, version);
+    } else {
+      await db.execAsync(sql);
+      await recordMigration(db, version);
+      console.log(`Migration ${version} applied successfully`);
+    }
   }
 
   // After all migrations, check for old data to migrate

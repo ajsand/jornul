@@ -8,27 +8,34 @@ import * as Clipboard from 'expo-clipboard';
 import { Clipboard as ClipboardIcon, Save, Sparkles, Upload } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
-import { pickMultipleFiles, processBatchUpload } from '@/lib/services';
+import {
+  pickMultipleFiles,
+  processBatchUpload,
+  startJobRunner,
+  registerAllJobHandlers,
+  isJobRunnerActive,
+  extractUrls,
+  countUrls,
+} from '@/lib/services';
 import { theme } from '@/lib/theme';
 
-type ContentType = 'unknown' | 'url' | 'note';
+type ContentType = 'unknown' | 'url' | 'urls' | 'note';
 
 /**
- * Detect if content is a URL
+ * Detect content type - single URL, multiple URLs, or note
  */
 function detectContentType(text: string): ContentType {
   if (!text.trim()) return 'unknown';
 
   const trimmed = text.trim();
+  const urlCount = countUrls(trimmed);
 
-  // Check for URL patterns
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return 'url';
-    }
-  } catch {
-    // Not a valid URL
+  if (urlCount > 1) {
+    return 'urls';
+  }
+
+  if (urlCount === 1) {
+    return 'url';
   }
 
   // Check for URL-like patterns without protocol
@@ -152,41 +159,66 @@ export default function ScratchScreen() {
       const rawDb = db.getRawDb();
 
       const itemId = uuidv4();
-      const isUrl = contentType === 'url';
       const content = text.trim();
+      const isUrlType = contentType === 'url' || contentType === 'urls';
+      const urls = isUrlType ? extractUrls(content) : [];
 
-      // Prepare item data based on content type
-      const title = isUrl
-        ? extractTitleFromUrl(normalizeUrl(content))
-        : extractTitleFromText(content);
+      // Prepare initial title (will be updated by job with fetched content)
+      let title: string;
+      if (urls.length > 1) {
+        title = `${urls.length} Links`;
+      } else if (urls.length === 1) {
+        title = extractTitleFromUrl(normalizeUrl(urls[0]));
+      } else {
+        title = extractTitleFromText(content);
+      }
+
+      // For URL entries, store all URLs in metadata
+      // The job will fetch actual content and update title/tags
+      const metadata: Record<string, any> = {
+        source: 'scratch',
+        captured_at: Date.now(),
+      };
+
+      if (urls.length > 0) {
+        metadata.urls = urls;
+        metadata.pendingUrlFetch = true; // Flag for job to fetch content
+      }
 
       // Create media item directly via repository
       await repos.createMediaItem(rawDb, {
         id: itemId,
-        type: isUrl ? 'url' : 'text',
+        type: isUrlType ? 'url' : 'text',
         title,
-        source_url: isUrl ? normalizeUrl(content) : null,
-        extracted_text: isUrl ? null : content,
+        source_url: urls.length === 1 ? normalizeUrl(urls[0]) : (urls.length > 1 ? urls[0] : null),
+        extracted_text: isUrlType ? (urls.length > 1 ? urls.join('\n') : null) : content,
         notes: null,
         local_uri: null,
-        metadata_json: JSON.stringify({
-          source: 'scratch',
-          captured_at: Date.now(),
-        }),
+        metadata_json: JSON.stringify(metadata),
       });
 
-      // Enqueue a job for normalization and tagging
+      // Enqueue a job for normalization and tagging (will fetch URL content)
       const jobId = uuidv4();
       await repos.createJob(rawDb, {
         id: jobId,
         kind: 'normalize_and_tag',
-        payload_json: JSON.stringify({ itemId }),
+        payload_json: JSON.stringify({
+          itemId,
+          fetchUrlContent: urls.length > 0, // Signal to fetch URL metadata
+        }),
       });
 
+      // Start job runner to process the job (if not already running)
+      if (!isJobRunnerActive()) {
+        registerAllJobHandlers();
+        await startJobRunner();
+      }
+
       // Success feedback
+      const typeLabel = urls.length > 1 ? `${urls.length} Links` : (urls.length === 1 ? 'Link' : 'Note');
       Alert.alert(
         'Saved!',
-        `${isUrl ? 'Link' : 'Note'} captured. Processing will happen in background.`,
+        `${typeLabel} captured. Fetching content and generating tags...`,
         [
           { text: 'Add Another', onPress: () => setText('') },
           { text: 'View Library', onPress: () => router.push('/(tabs)/library') },
@@ -194,9 +226,9 @@ export default function ScratchScreen() {
       );
 
       setText('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save:', error);
-      Alert.alert('Error', 'Failed to save. Please try again.');
+      Alert.alert('Error', `Failed to save: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -227,7 +259,7 @@ export default function ScratchScreen() {
           {hasContent && (
             <HelperText type="info" style={styles.typeIndicator}>
               <Sparkles size={12} color={theme.colors.primary} />
-              {' '}Detected: {contentType === 'url' ? 'Link' : 'Note'}
+              {' '}Detected: {contentType === 'urls' ? `${countUrls(text)} Links` : contentType === 'url' ? 'Link' : 'Note'}
             </HelperText>
           )}
         </View>

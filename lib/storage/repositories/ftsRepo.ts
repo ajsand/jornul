@@ -16,6 +16,25 @@ export interface FtsSearchOptions {
 }
 
 /**
+ * Check if FTS is available (table exists)
+ */
+let ftsAvailable: boolean | null = null;
+
+async function isFtsAvailable(db: SQLite.SQLiteDatabase): Promise<boolean> {
+  if (ftsAvailable !== null) return ftsAvailable;
+
+  try {
+    const result = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='items_fts'"
+    );
+    ftsAvailable = (result?.count ?? 0) > 0;
+  } catch {
+    ftsAvailable = false;
+  }
+  return ftsAvailable;
+}
+
+/**
  * Upsert an item into the FTS index
  * Call this after creating or updating a media item, or after tag changes
  */
@@ -23,6 +42,11 @@ export async function upsertFtsEntry(
   db: SQLite.SQLiteDatabase,
   itemId: string
 ): Promise<void> {
+  // Skip if FTS is not available (e.g., on web)
+  if (!(await isFtsAvailable(db))) {
+    return;
+  }
+
   // First delete existing entry if any
   await db.runAsync('DELETE FROM items_fts WHERE item_id = ?', [itemId]);
 
@@ -77,6 +101,10 @@ export async function deleteFtsEntry(
   db: SQLite.SQLiteDatabase,
   itemId: string
 ): Promise<void> {
+  // Skip if FTS is not available (e.g., on web)
+  if (!(await isFtsAvailable(db))) {
+    return;
+  }
   await db.runAsync('DELETE FROM items_fts WHERE item_id = ?', [itemId]);
 }
 
@@ -91,6 +119,29 @@ export async function searchFts(
 ): Promise<FtsSearchResult[]> {
   if (!query.trim()) {
     return [];
+  }
+
+  // Fall back to LIKE search if FTS is not available
+  if (!(await isFtsAvailable(db))) {
+    const pattern = `%${query}%`;
+    let sql = `
+      SELECT id as item_id, 0 as rank
+      FROM media_items
+      WHERE title LIKE ? OR extracted_text LIKE ? OR notes LIKE ? OR source_url LIKE ?
+      ORDER BY created_at DESC
+    `;
+    const params: any[] = [pattern, pattern, pattern, pattern];
+
+    if (options?.limit) {
+      sql += ' LIMIT ?';
+      params.push(options.limit);
+    }
+    if (options?.offset) {
+      sql += ' OFFSET ?';
+      params.push(options.offset);
+    }
+
+    return await db.getAllAsync<FtsSearchResult>(sql, params);
   }
 
   // Escape special FTS5 characters and prepare query
@@ -145,6 +196,41 @@ export async function searchMediaItems(
   if (!query.trim()) {
     // If no search query, fall back to regular listing
     return [];
+  }
+
+  // Fall back to LIKE search if FTS is not available
+  if (!(await isFtsAvailable(db))) {
+    const pattern = `%${query}%`;
+    const whereClauses: string[] = [
+      '(m.title LIKE ? OR m.extracted_text LIKE ? OR m.notes LIKE ? OR m.source_url LIKE ?)'
+    ];
+    const params: any[] = [pattern, pattern, pattern, pattern];
+
+    if (options?.type) {
+      whereClauses.push('m.type = ?');
+      params.push(options.type);
+    }
+    if (options?.dateFrom) {
+      whereClauses.push('m.created_at >= ?');
+      params.push(options.dateFrom);
+    }
+    if (options?.dateTo) {
+      whereClauses.push('m.created_at <= ?');
+      params.push(options.dateTo);
+    }
+
+    let sql = `SELECT m.* FROM media_items m WHERE ${whereClauses.join(' AND ')} ORDER BY m.created_at DESC`;
+
+    if (options?.limit) {
+      sql += ' LIMIT ?';
+      params.push(options.limit);
+    }
+    if (options?.offset) {
+      sql += ' OFFSET ?';
+      params.push(options.offset);
+    }
+
+    return await db.getAllAsync<MediaItem>(sql, params);
   }
 
   // Escape special FTS5 characters and prepare query
@@ -222,6 +308,22 @@ export async function getSearchTagFacets(
     return [];
   }
 
+  // Fall back to LIKE-based tag facets if FTS is not available
+  if (!(await isFtsAvailable(db))) {
+    const pattern = `%${query}%`;
+    const sql = `
+      SELECT t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at, COUNT(*) as usage_count
+      FROM media_items m
+      INNER JOIN item_tags it ON m.id = it.item_id
+      INNER JOIN tags t ON it.tag_id = t.id
+      WHERE m.title LIKE ? OR m.extracted_text LIKE ? OR m.notes LIKE ? OR m.source_url LIKE ?
+      GROUP BY t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at
+      ORDER BY usage_count DESC
+      LIMIT ?
+    `;
+    return await db.getAllAsync<TagWithCount>(sql, [pattern, pattern, pattern, pattern, limit]);
+  }
+
   const sanitizedQuery = query
     .replace(/['"]/g, '')
     .split(/\s+/)
@@ -254,6 +356,12 @@ export async function getSearchTagFacets(
 export async function rebuildFtsIndex(
   db: SQLite.SQLiteDatabase
 ): Promise<number> {
+  // Skip if FTS is not available (e.g., on web)
+  if (!(await isFtsAvailable(db))) {
+    console.warn('FTS not available, skipping index rebuild');
+    return 0;
+  }
+
   // Clear existing index
   await db.runAsync('DELETE FROM items_fts');
 

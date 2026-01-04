@@ -5,10 +5,11 @@
 
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
-import { Job } from '@/lib/storage/types';
+import { Job, MediaItem } from '@/lib/storage/types';
 import { registerJobHandler } from './jobRunner';
 import { updateBatchJobStatus } from './massUpload';
-import { tagItem } from './aets';
+import { tagItem, tagItemWithContent } from './aets';
+import { analyzeMultipleUrls, extractUrls, UrlMetadata } from './urlMetadata';
 
 /**
  * Extract domain from URL
@@ -42,20 +43,20 @@ function computeTextStats(text: string): {
 
 /**
  * Normalize and tag handler
- * - For links: extract domain, update source_domain
+ * - For links: fetch content, extract title/description, update metadata
  * - For notes: compute text stats, store in media_meta
  * - For files: merge existing meta with normalized info
  */
 async function handleNormalizeAndTag(
   job: Job,
-  payload: { itemId: string; batchId?: string }
+  payload: { itemId: string; batchId?: string; fetchUrlContent?: boolean }
 ): Promise<void> {
   if (!payload.itemId) {
     throw new Error('Missing itemId in payload');
   }
 
   const rawDb = db.getRawDb();
-  const item = await repos.getMediaItem(rawDb, payload.itemId);
+  let item = await repos.getMediaItem(rawDb, payload.itemId);
 
   if (!item) {
     throw new Error(`Item not found: ${payload.itemId}`);
@@ -63,7 +64,7 @@ async function handleNormalizeAndTag(
 
   console.log(`[NormalizeAndTag] Processing item: ${item.id} (type: ${item.type})`);
 
-  // Get existing meta if any
+  // Get existing meta and metadata_json
   const existingMeta = await repos.getMediaMeta(rawDb, item.id);
   let existingExtra: Record<string, any> = {};
   if (existingMeta?.extra_json) {
@@ -74,28 +75,121 @@ async function handleNormalizeAndTag(
     }
   }
 
-  if (item.type === 'url' && item.source_url) {
-    // Handle URL items
-    const domain = extractDomain(item.source_url);
+  let itemMetadata: Record<string, any> = {};
+  if (item.metadata_json) {
+    try {
+      itemMetadata = JSON.parse(item.metadata_json);
+    } catch {
+      // Ignore parse errors
+    }
+  }
 
-    if (domain) {
-      await repos.upsertMediaMeta(rawDb, {
-        item_id: item.id,
-        source_domain: domain,
-        extra_json: JSON.stringify({
-          ...existingExtra,
-          normalized_at: Date.now(),
-          original_url: item.source_url,
-        }),
-      });
+  // Content for enhanced tagging
+  let fetchedContent: string[] = [];
+  let fetchedKeywords: string[] = [];
 
-      if (!item.title || item.title === 'Link' || item.title === domain) {
-        await repos.updateMediaItem(rawDb, item.id, {
-          title: domain,
+  if (item.type === 'url') {
+    // Get URLs from metadata or source_url
+    const urls = itemMetadata.urls || (item.source_url ? [item.source_url] : []);
+
+    if (urls.length > 0 && (payload.fetchUrlContent || itemMetadata.pendingUrlFetch)) {
+      console.log(`[NormalizeAndTag] Fetching content for ${urls.length} URL(s)...`);
+
+      try {
+        // Fetch metadata for all URLs
+        const analysis = await analyzeMultipleUrls(urls);
+
+        // Update item title with combined title from fetched content
+        if (analysis.combinedTitle && analysis.combinedTitle !== 'Link Collection') {
+          await repos.updateMediaItem(rawDb, item.id, {
+            title: analysis.combinedTitle,
+          });
+          console.log(`[NormalizeAndTag] Updated title: ${analysis.combinedTitle}`);
+        }
+
+        // Collect content for tagging
+        for (const urlMeta of analysis.urls) {
+          if (urlMeta.title) fetchedContent.push(urlMeta.title);
+          if (urlMeta.description) fetchedContent.push(urlMeta.description);
+          if (urlMeta.author) fetchedContent.push(urlMeta.author);
+          fetchedKeywords.push(...urlMeta.keywords);
+        }
+
+        // Add common themes as keywords
+        fetchedKeywords.push(...analysis.commonThemes);
+
+        // Store fetched metadata
+        const urlMetadata = analysis.urls.map(u => ({
+          url: u.url,
+          title: u.title,
+          description: u.description,
+          siteName: u.siteName,
+          type: u.type,
+          author: u.author,
+          thumbnailUrl: u.thumbnailUrl,
+        }));
+
+        // Get primary domain
+        const primaryDomain = analysis.urls[0]?.siteName || extractDomain(urls[0]);
+
+        await repos.upsertMediaMeta(rawDb, {
+          item_id: item.id,
+          source_domain: primaryDomain,
+          extra_json: JSON.stringify({
+            ...existingExtra,
+            normalized_at: Date.now(),
+            urls: urlMetadata,
+            commonThemes: analysis.commonThemes,
+            fetchedKeywords: [...new Set(fetchedKeywords)],
+          }),
         });
-      }
 
-      console.log(`[NormalizeAndTag] Link normalized: domain=${domain}`);
+        // Update metadata_json to mark fetch complete
+        itemMetadata.pendingUrlFetch = false;
+        itemMetadata.urlsFetched = true;
+        itemMetadata.fetchedAt = Date.now();
+        await repos.updateMediaItem(rawDb, item.id, {
+          metadata_json: JSON.stringify(itemMetadata),
+        });
+
+        console.log(`[NormalizeAndTag] URL content fetched: ${analysis.urls.length} URLs, ${fetchedKeywords.length} keywords`);
+      } catch (error) {
+        console.error(`[NormalizeAndTag] Failed to fetch URL content:`, error);
+        // Continue with basic normalization
+        const domain = extractDomain(urls[0]);
+        if (domain) {
+          await repos.upsertMediaMeta(rawDb, {
+            item_id: item.id,
+            source_domain: domain,
+            extra_json: JSON.stringify({
+              ...existingExtra,
+              normalized_at: Date.now(),
+              fetchError: String(error),
+            }),
+          });
+        }
+      }
+    } else if (item.source_url) {
+      // Basic URL normalization (no content fetch)
+      const domain = extractDomain(item.source_url);
+      if (domain) {
+        await repos.upsertMediaMeta(rawDb, {
+          item_id: item.id,
+          source_domain: domain,
+          extra_json: JSON.stringify({
+            ...existingExtra,
+            normalized_at: Date.now(),
+            original_url: item.source_url,
+          }),
+        });
+
+        if (!item.title || item.title === 'Link' || item.title === domain) {
+          await repos.updateMediaItem(rawDb, item.id, {
+            title: domain,
+          });
+        }
+        console.log(`[NormalizeAndTag] Link normalized: domain=${domain}`);
+      }
     }
   } else if (item.type === 'text' && item.extracted_text) {
     // Handle text/note items
@@ -124,9 +218,36 @@ async function handleNormalizeAndTag(
     console.log(`[NormalizeAndTag] File normalized: ${item.type}`);
   }
 
+  // Refresh item after updates
+  const refreshedItem = await repos.getMediaItem(rawDb, payload.itemId);
+  if (!refreshedItem) {
+    throw new Error(`Item not found after update: ${payload.itemId}`);
+  }
+
+  // Convert to base MediaItem for tagging (strip tags relation)
+  const itemForTagging: MediaItem = {
+    id: refreshedItem.id,
+    type: refreshedItem.type,
+    title: refreshedItem.title,
+    source_url: refreshedItem.source_url,
+    local_uri: refreshedItem.local_uri,
+    notes: refreshedItem.notes,
+    extracted_text: refreshedItem.extracted_text,
+    metadata_json: refreshedItem.metadata_json,
+    created_at: refreshedItem.created_at,
+    updated_at: refreshedItem.updated_at,
+  };
+
   // AETS: Extract and assign emergent tags
   try {
-    const taggingResult = await tagItem(rawDb, item);
+    let taggingResult;
+    if (fetchedContent.length > 0 || fetchedKeywords.length > 0) {
+      // Use enhanced tagging with fetched content
+      taggingResult = await tagItemWithContent(rawDb, itemForTagging, fetchedContent, fetchedKeywords);
+    } else {
+      // Use standard tagging
+      taggingResult = await tagItem(rawDb, itemForTagging);
+    }
     console.log(`[NormalizeAndTag] AETS tagged: ${taggingResult.tagsAssigned} tags assigned`);
   } catch (error) {
     // Log but don't fail the job if tagging fails

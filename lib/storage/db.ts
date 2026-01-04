@@ -39,14 +39,73 @@ export interface JournalItem {
   embedding?: number[];
 }
 
+// Module-level state that survives hot reloads
+// @ts-ignore - global state for singleton
+const globalState = (globalThis as any).__journallink_db_state__ || {
+  db: null as SQLite.SQLiteDatabase | null,
+  initialized: false,
+  initPromise: null as Promise<void> | null,
+};
+// @ts-ignore
+globalThis.__journallink_db_state__ = globalState;
+
 /**
  * Main database class for JournalLink
  * Provides high-level API wrapping repository functions
  */
 class Database {
-  private db: SQLite.SQLiteDatabase | null = null;
+  private get db(): SQLite.SQLiteDatabase | null {
+    return globalState.db;
+  }
+  private set db(value: SQLite.SQLiteDatabase | null) {
+    globalState.db = value;
+  }
+
+  private get initPromise(): Promise<void> | null {
+    return globalState.initPromise;
+  }
+  private set initPromise(value: Promise<void> | null) {
+    globalState.initPromise = value;
+  }
+
+  private get initialized(): boolean {
+    return globalState.initialized;
+  }
+  private set initialized(value: boolean) {
+    globalState.initialized = value;
+  }
+
+  /**
+   * Check if database is already initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized && this.db !== null;
+  }
 
   async init(): Promise<void> {
+    // If already initialized, return immediately
+    if (this.initialized && this.db) {
+      console.log('Database already initialized, reusing connection');
+      return;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.initPromise) {
+      console.log('Database initialization in progress, waiting...');
+      return this.initPromise;
+    }
+
+    // Start initialization
+    console.log('Starting database initialization...');
+    this.initPromise = this.doInit();
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
+  }
+
+  private async doInit(): Promise<void> {
     try {
       this.db = await SQLite.openDatabaseAsync('journallink.db', {
         enableChangeListener: true,
@@ -58,8 +117,31 @@ class Database {
       // Run migrations (creates tables and handles schema versioning)
       await runMigrations(this.db);
 
+      this.initialized = true;
       console.log('Database initialized successfully');
     } catch (error: any) {
+      // Handle web-specific OPFS file locking error
+      if (error.message?.includes('createSyncAccessHandle') ||
+          error.message?.includes('NoModificationAllowedError')) {
+        console.warn('Database file locked, attempting recovery...');
+        // Wait a moment and retry once
+        await new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          this.db = await SQLite.openDatabaseAsync('journallink.db', {
+            enableChangeListener: true,
+          });
+          await this.db.execAsync('PRAGMA journal_mode = WAL;');
+          await runMigrations(this.db);
+          this.initialized = true;
+          console.log('Database initialized successfully (after retry)');
+          return;
+        } catch (retryError: any) {
+          console.error('Database retry failed:', retryError);
+          throw new Error(
+            'Database is locked by another tab or process. Please close other tabs using this app and refresh.'
+          );
+        }
+      }
       console.error('Database initialization failed:', error);
       throw new Error('Failed to initialize database: ' + error.message);
     }

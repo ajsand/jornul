@@ -13,8 +13,8 @@ import {
   extractDomainTokens,
   extractFilenameTokens,
   normalizeTagName,
-  Keyphrase,
 } from './keyphrase';
+import { isAnyStopword } from './wordLists';
 
 // Maximum tags to assign per item
 const MAX_TAGS_PER_ITEM = 5;
@@ -46,7 +46,38 @@ function generateSlug(name: string): string {
 }
 
 /**
+ * Check if a candidate is a quality tag
+ * Filters out stopwords and weak single-word tags
+ */
+function isQualityTag(name: string): boolean {
+  const words = name.split(/\s+/);
+
+  // Multi-word phrases are generally higher quality
+  if (words.length >= 2) {
+    // But still filter if all words are stopwords
+    const meaningfulWords = words.filter(w => !isAnyStopword(w) && w.length >= 3);
+    return meaningfulWords.length >= 1;
+  }
+
+  // For single words, apply stricter filtering
+  const singleWord = words[0];
+
+  // Must not be a stopword
+  if (isAnyStopword(singleWord)) {
+    return false;
+  }
+
+  // Must be at least 4 characters for single words
+  if (singleWord.length < 4) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Merge and deduplicate tag candidates, keeping highest score for each
+ * Also applies quality filtering and boosts multi-word phrases
  */
 function mergeCandidates(candidates: TagCandidate[]): TagCandidate[] {
   const merged = new Map<string, TagCandidate>();
@@ -55,9 +86,16 @@ function mergeCandidates(candidates: TagCandidate[]): TagCandidate[] {
     const normalized = normalizeTagName(candidate.name);
     if (!normalized || normalized.length < 3) continue;
 
+    // Apply quality filtering
+    if (!isQualityTag(normalized)) continue;
+
+    // Boost score for multi-word phrases (they're more specific)
+    const isMultiWord = normalized.includes(' ');
+    const adjustedScore = isMultiWord ? candidate.score * 1.1 : candidate.score;
+
     const existing = merged.get(normalized);
-    if (!existing || existing.score < candidate.score) {
-      merged.set(normalized, { ...candidate, name: normalized });
+    if (!existing || existing.score < adjustedScore) {
+      merged.set(normalized, { ...candidate, name: normalized, score: adjustedScore });
     }
   }
 
@@ -219,6 +257,58 @@ export async function tagItem(
 
   // Assign tags
   const result = await assignTags(db, item.id, candidates);
+  console.log(`[AETS] Assigned ${result.tagsAssigned} tags to item ${item.id}`);
+
+  return result;
+}
+
+/**
+ * Enhanced tagging with fetched content
+ * Uses additional content and keywords from URL fetching
+ */
+export async function tagItemWithContent(
+  db: SQLite.SQLiteDatabase,
+  item: MediaItem,
+  additionalContent: string[],
+  additionalKeywords: string[]
+): Promise<TaggingResult> {
+  console.log(`[AETS] Enhanced tagging for item: ${item.id}`);
+  console.log(`[AETS] Additional content pieces: ${additionalContent.length}, keywords: ${additionalKeywords.length}`);
+
+  // Extract candidates from item itself
+  const candidates = extractTagCandidates(item);
+
+  // Add candidates from additional content
+  for (const content of additionalContent) {
+    if (content && content.length > 0) {
+      const contentTags = extractKeyphrases(content, 5);
+      candidates.push(...contentTags.map(kp => ({
+        name: kp.phrase,
+        score: kp.score * 0.9, // Slightly lower weight for fetched content
+        source: 'heuristic' as TagSource,
+      })));
+    }
+  }
+
+  // Add candidates from additional keywords (high confidence since they're pre-extracted)
+  for (const keyword of additionalKeywords) {
+    const normalized = normalizeTagName(keyword);
+    if (normalized && normalized.length >= 3) {
+      candidates.push({
+        name: normalized,
+        score: 0.75, // Good confidence for pre-extracted keywords
+        source: 'heuristic' as TagSource,
+      });
+    }
+  }
+
+  // Merge and deduplicate
+  const mergedCandidates = mergeCandidates(candidates);
+  console.log(`[AETS] Total merged candidates: ${mergedCandidates.length}`);
+
+  // Assign more tags for multi-URL entries (up to 10)
+  const maxTags = additionalContent.length > 1 ? 10 : MAX_TAGS_PER_ITEM;
+  const result = await assignTags(db, item.id, mergedCandidates, maxTags);
   console.log(`[AETS] Assigned ${result.tagsAssigned} tags to item ${item.id}`);
 
   return result;
