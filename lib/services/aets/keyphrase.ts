@@ -4,6 +4,8 @@
  * Focuses on nouns, proper names, and multi-word phrases
  */
 
+import { isAnyStopword, isUrlPathStopword } from './wordLists';
+
 export interface Keyphrase {
   phrase: string;
   score: number;
@@ -224,14 +226,29 @@ function isWeakWord(word: string): boolean {
 }
 
 /**
+ * Words that commonly precede artist/creator names
+ */
+const NAME_PREFIXES = new Set([
+  'by', 'ft', 'ft.', 'feat', 'feat.', 'featuring', 'with', 'presents', 'vs', 'vs.',
+  'starring', 'directed', 'produced', 'hosted', 'from', 'interview',
+]);
+
+/**
+ * Common single-word stage names and known artists (partial list for pattern matching)
+ */
+const SINGLE_NAME_PATTERNS = /^(Adele|Drake|Rihanna|Beyonc[eé]|Madonna|Prince|Cher|Shakira|Eminem|Kanye|Usher|Sia|Lorde|Halsey|Lizzo|Doja|SZA|Kesha|Pitbull|Ludacris|Future|Migos|Travis|Post|Dua|Billie|Ariana|Selena|Demi|Miley|Taylor|Ed|Bruno|Justin|Kendrick|Cardi|Nicki|Megan|Logic|XXXTentacion|Juice|Lil|Young|Bad|The|DJ)$/i;
+
+/**
  * Extract proper nouns (multi-word names) from text
  * Looks for sequences of capitalized words like "Bruno Mars" or "LeBron James"
+ * Also handles single-word artist names and featured artist patterns
  */
 function extractProperNouns(text: string): Keyphrase[] {
   const results: Keyphrase[] = [];
+  const seen = new Set<string>();
 
-  // Match sequences of 2-4 capitalized words (likely names/titles)
-  const namePattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g;
+  // 1. Match sequences of 2-4 capitalized words (likely names/titles)
+  const namePattern = /\b([A-Z][a-zA-Z]*(?:[''][a-z]+)?(?:\s+[A-Z][a-zA-Z]*(?:[''][a-z]+)?){1,3})\b/g;
   let match;
 
   while ((match = namePattern.exec(text)) !== null) {
@@ -248,11 +265,46 @@ function extractProperNouns(text: string): Keyphrase[] {
     const allWordsShort = words.every(w => w.length <= 2);
     if (allWordsShort) continue;
 
-    // Boost score for multi-word proper nouns
-    results.push({
-      phrase: name.toLowerCase(),
-      score: 0.9,
-    });
+    const normalized = name.toLowerCase();
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        phrase: normalized,
+        score: 0.9,
+      });
+    }
+  }
+
+  // 2. Extract names after "ft.", "feat.", "by", etc.
+  const featPattern = /\b(?:ft\.?|feat\.?|featuring|by|with)\s+([A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){0,2})/gi;
+  while ((match = featPattern.exec(text)) !== null) {
+    const name = match[1].trim();
+    if (name.length >= 2) {
+      const normalized = name.toLowerCase();
+      if (!seen.has(normalized) && !isAnyStopword(normalized)) {
+        seen.add(normalized);
+        results.push({
+          phrase: normalized,
+          score: 0.85, // High score for featured artists
+        });
+      }
+    }
+  }
+
+  // 3. Look for single capitalized words that might be artist names
+  const singleNamePattern = /\b([A-Z][a-z]{3,})\b/g;
+  while ((match = singleNamePattern.exec(text)) !== null) {
+    const word = match[1];
+    const normalized = word.toLowerCase();
+    
+    // Only add if it looks like a stage name and isn't already captured
+    if (!seen.has(normalized) && SINGLE_NAME_PATTERNS.test(word)) {
+      seen.add(normalized);
+      results.push({
+        phrase: normalized,
+        score: 0.8,
+      });
+    }
   }
 
   return results;
@@ -398,6 +450,7 @@ export function extractKeyphrases(text: string, maxPhrases: number = 5): Keyphra
 
 /**
  * Extract keyphrases from a title (higher weight, different strategy)
+ * Handles YouTube-style titles: "Artist Name - Song Title (Official Video)"
  */
 export function extractTitleKeyphrases(title: string): Keyphrase[] {
   if (!title || title.trim().length === 0) {
@@ -405,42 +458,96 @@ export function extractTitleKeyphrases(title: string): Keyphrase[] {
   }
 
   const results: Keyphrase[] = [];
+  const seen = new Set<string>();
 
-  // For titles, extract proper nouns with high confidence
-  const properNouns = extractProperNouns(title);
-  for (const pn of properNouns) {
-    results.push({ phrase: pn.phrase, score: pn.score + 0.05 });
+  // 1. Clean common video/content markers from the title first
+  const cleanTitle = title
+    .replace(/\s*\(official\s*(video|audio|music\s*video|lyric\s*video|visualizer)?\)\s*/gi, ' ')
+    .replace(/\s*\[(official|hd|hq|4k|lyrics?|audio)\]\s*/gi, ' ')
+    .replace(/\s*[\|\-]\s*official\s*/gi, ' ')
+    .replace(/\s*#\w+\s*/g, ' ')  // Remove hashtags
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // 2. Try to split on common delimiters for structured titles (Artist - Song)
+  const delimiterPatterns = [
+    /^(.+?)\s*[-–—]\s*(.+?)$/,    // Artist - Song
+    /^(.+?)\s*[|]\s*(.+?)$/,       // Artist | Song
+    /^(.+?)\s*:\s*(.+?)$/,         // Show: Episode
+  ];
+
+  for (const pattern of delimiterPatterns) {
+    const match = cleanTitle.match(pattern);
+    if (match) {
+      const [, part1, part2] = match;
+      // Both parts are likely meaningful
+      for (const part of [part1, part2]) {
+        const trimmed = part.trim();
+        if (trimmed.length >= 2) {
+          // Extract proper nouns from each part
+          const partNouns = extractProperNouns(trimmed);
+          for (const pn of partNouns) {
+            if (!seen.has(pn.phrase)) {
+              seen.add(pn.phrase);
+              results.push({ phrase: pn.phrase, score: pn.score + 0.05 });
+            }
+          }
+        }
+      }
+      break; // Only use the first matching pattern
+    }
   }
 
-  // Detect categories from title
-  const categories = detectCategories(title);
-  results.push(...categories);
+  // 3. Extract proper nouns from the full title
+  const properNouns = extractProperNouns(cleanTitle);
+  for (const pn of properNouns) {
+    if (!seen.has(pn.phrase)) {
+      seen.add(pn.phrase);
+      results.push({ phrase: pn.phrase, score: pn.score + 0.05 });
+    }
+  }
 
-  // For titles, extract the meaningful words as a phrase
-  const normalized = normalizeTagName(title);
-  if (normalized.length >= 4 && normalized.length <= 50) {
+  // 4. Detect categories from title
+  const categories = detectCategories(cleanTitle);
+  for (const cat of categories) {
+    if (!seen.has(cat.phrase)) {
+      seen.add(cat.phrase);
+      results.push(cat);
+    }
+  }
+
+  // 5. For titles, extract meaningful multi-word phrases (2-3 words)
+  const normalized = normalizeTagName(cleanTitle);
+  if (normalized.length >= 4 && normalized.length <= 60) {
     const words = normalized.split(/\s+/);
-    const meaningfulWords = words.filter(w => !isStopWord(w) && w.length > 2);
+    const meaningfulWords = words.filter(w => !isStopWord(w) && !isAnyStopword(w) && w.length > 2);
 
-    if (meaningfulWords.length >= 1 && meaningfulWords.length <= 5) {
+    // Create multi-word phrases from consecutive meaningful words
+    if (meaningfulWords.length >= 2 && meaningfulWords.length <= 6) {
       const tagPhrase = meaningfulWords.join(' ');
-      if (tagPhrase.length >= 4 && !isStopWord(tagPhrase)) {
+      if (tagPhrase.length >= 5 && !seen.has(tagPhrase)) {
+        seen.add(tagPhrase);
         results.push({
           phrase: tagPhrase,
-          score: 0.75,
+          score: 0.8, // Higher score for multi-word phrases
+        });
+      }
+    }
+
+    // Also add individual meaningful words as lower-priority tags
+    for (const word of meaningfulWords) {
+      if (word.length >= 4 && !seen.has(word)) {
+        seen.add(word);
+        results.push({
+          phrase: word,
+          score: 0.5, // Lower score for single words
         });
       }
     }
   }
 
-  // Deduplicate
-  const seen = new Set<string>();
-  return results.filter(r => {
-    const key = r.phrase.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, 5);
+  // Sort by score and return top phrases (prefer multi-word)
+  return results.sort((a, b) => b.score - a.score).slice(0, 8);
 }
 
 /**
@@ -500,14 +607,22 @@ export function extractDomainTokens(url: string): Keyphrase[] {
       });
     }
 
-    // Extract meaningful parts from path
+    // Extract meaningful parts from path (but filter out common URL path stopwords)
     const pathParts = urlObj.pathname
       .split('/')
-      .filter(p => p.length > 3 && !isStopWord(p) && !/^[0-9]+$/.test(p) && !/^v\d+$/.test(p));
+      .filter(p => {
+        if (p.length < 4) return false;
+        if (/^[0-9]+$/.test(p)) return false;  // Pure numbers
+        if (/^v\d+$/.test(p)) return false;     // Version patterns like v1, v2
+        if (isStopWord(p)) return false;
+        if (isUrlPathStopword(p)) return false; // Filter URL path stopwords
+        return true;
+      });
 
     for (const part of pathParts.slice(0, 2)) {
       const cleaned = part.replace(/[-_]/g, ' ').toLowerCase();
-      if (cleaned.length >= 4 && !isStopWord(cleaned)) {
+      // Double-check the cleaned version isn't a stopword
+      if (cleaned.length >= 4 && !isStopWord(cleaned) && !isUrlPathStopword(cleaned)) {
         results.push({
           phrase: cleaned,
           score: 0.4,

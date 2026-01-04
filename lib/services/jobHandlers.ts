@@ -10,6 +10,7 @@ import { registerJobHandler } from './jobRunner';
 import { updateBatchJobStatus } from './massUpload';
 import { tagItem, tagItemWithContent } from './aets';
 import { analyzeMultipleUrls, extractUrls, UrlMetadata } from './urlMetadata';
+import { upsertFtsEntry } from '@/lib/storage/repositories/ftsRepo';
 
 /**
  * Extract domain from URL
@@ -99,12 +100,23 @@ async function handleNormalizeAndTag(
         // Fetch metadata for all URLs
         const analysis = await analyzeMultipleUrls(urls);
 
-        // Update item title with combined title from fetched content
-        if (analysis.combinedTitle && analysis.combinedTitle !== 'Link Collection') {
+        // Determine the best title from fetched content
+        let newTitle: string | null = null;
+        
+        // For single URL, prefer the actual fetched title
+        if (urls.length === 1 && analysis.urls[0]?.title) {
+          newTitle = analysis.urls[0].title;
+        } else if (analysis.combinedTitle && analysis.combinedTitle !== 'Link Collection') {
+          // For multiple URLs, use the combined title
+          newTitle = analysis.combinedTitle;
+        }
+
+        // Update item title if we got a real title
+        if (newTitle && newTitle.trim().length > 0) {
           await repos.updateMediaItem(rawDb, item.id, {
-            title: analysis.combinedTitle,
+            title: newTitle,
           });
-          console.log(`[NormalizeAndTag] Updated title: ${analysis.combinedTitle}`);
+          console.log(`[NormalizeAndTag] Updated title: "${newTitle}"`);
         }
 
         // Collect content for tagging
@@ -155,7 +167,7 @@ async function handleNormalizeAndTag(
         console.log(`[NormalizeAndTag] URL content fetched: ${analysis.urls.length} URLs, ${fetchedKeywords.length} keywords`);
       } catch (error) {
         console.error(`[NormalizeAndTag] Failed to fetch URL content:`, error);
-        // Continue with basic normalization
+        // Continue with basic normalization but keep pendingUrlFetch = true for retry
         const domain = extractDomain(urls[0]);
         if (domain) {
           await repos.upsertMediaMeta(rawDb, {
@@ -165,7 +177,15 @@ async function handleNormalizeAndTag(
               ...existingExtra,
               normalized_at: Date.now(),
               fetchError: String(error),
+              lastFetchAttempt: Date.now(),
             }),
+          });
+          
+          // Update metadata but keep pendingUrlFetch true so it can be retried
+          itemMetadata.lastFetchError = String(error);
+          itemMetadata.lastFetchAttempt = Date.now();
+          await repos.updateMediaItem(rawDb, item.id, {
+            metadata_json: JSON.stringify(itemMetadata),
           });
         }
       }
@@ -252,6 +272,14 @@ async function handleNormalizeAndTag(
   } catch (error) {
     // Log but don't fail the job if tagging fails
     console.error(`[NormalizeAndTag] AETS tagging failed:`, error);
+  }
+
+  // Update FTS index with the final title and tags
+  try {
+    await upsertFtsEntry(rawDb, payload.itemId);
+    console.log(`[NormalizeAndTag] FTS index updated for item ${payload.itemId}`);
+  } catch (error) {
+    console.warn(`[NormalizeAndTag] FTS update failed:`, error);
   }
 
   // Update batch job status if this is part of a batch

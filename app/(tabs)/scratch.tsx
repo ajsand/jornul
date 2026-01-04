@@ -47,20 +47,69 @@ function detectContentType(text: string): ContentType {
 }
 
 /**
+ * URL path segments that should not become titles
+ */
+const IGNORED_PATH_SEGMENTS = new Set([
+  'watch', 'shorts', 'video', 'videos', 'embed', 'e', 'v', 'p',
+  'post', 'posts', 'status', 'reel', 'reels', 'stories', 'story',
+  'article', 'articles', 'blog', 'news', 'feed',
+]);
+
+/**
+ * Known platform provisional titles (used before metadata fetch)
+ */
+const PLATFORM_TITLES: Record<string, string> = {
+  'youtube.com': 'YouTube Video',
+  'youtu.be': 'YouTube Video',
+  'vimeo.com': 'Vimeo Video',
+  'twitter.com': 'Tweet',
+  'x.com': 'Tweet',
+  'instagram.com': 'Instagram Post',
+  'tiktok.com': 'TikTok Video',
+  'reddit.com': 'Reddit Post',
+  'github.com': 'GitHub',
+  'medium.com': 'Medium Article',
+  'linkedin.com': 'LinkedIn Post',
+  'spotify.com': 'Spotify',
+  'soundcloud.com': 'SoundCloud Track',
+  'twitch.tv': 'Twitch Stream',
+};
+
+/**
  * Extract title from URL
+ * Provides a meaningful provisional title for known platforms
+ * Falls back to cleaned path segment or hostname
  */
 function extractTitleFromUrl(url: string): string {
   try {
     const urlObj = new URL(url);
+    const hostname = urlObj.hostname.replace(/^www\./, '').toLowerCase();
     const pathname = urlObj.pathname.replace(/\/$/, '');
     const segments = pathname.split('/').filter(s => s.length > 0);
 
-    if (segments.length > 0) {
-      const lastSegment = segments[segments.length - 1];
-      return decodeURIComponent(lastSegment).replace(/[-_]/g, ' ').trim();
+    // Check for known platforms first
+    for (const [domain, title] of Object.entries(PLATFORM_TITLES)) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        return title;
+      }
     }
 
-    return urlObj.hostname;
+    // Find the first meaningful path segment (not in ignored list)
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const segment = segments[i].toLowerCase();
+      // Skip ignored segments and very short/numeric segments
+      if (!IGNORED_PATH_SEGMENTS.has(segment) && segment.length > 2 && !/^\d+$/.test(segment)) {
+        const cleaned = decodeURIComponent(segments[i]).replace(/[-_]/g, ' ').trim();
+        if (cleaned.length > 2) {
+          // Capitalize first letter
+          return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        }
+      }
+    }
+
+    // Fall back to cleaned hostname
+    const cleanHostname = hostname.replace(/\.(com|org|net|io|co|me)$/, '');
+    return cleanHostname.charAt(0).toUpperCase() + cleanHostname.slice(1);
   } catch {
     return 'Link';
   }

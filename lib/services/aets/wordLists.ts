@@ -217,6 +217,35 @@ export const VIDEO_STOPWORDS = new Set([
 ]);
 
 /**
+ * URL path segments that should never become tags
+ * These are common path components that have no semantic meaning
+ */
+export const URL_PATH_STOPWORDS = new Set([
+  // Video/content paths
+  'watch', 'shorts', 'embed', 'e', 'v', 'p', 'c',
+  // Social media paths
+  'post', 'posts', 'status', 'statuses', 'tweet', 'tweets',
+  'reel', 'reels', 'stories', 'story', 'feed',
+  'photo', 'photos', 'pic', 'pics', 'image', 'images',
+  // Content organization paths
+  'article', 'articles', 'blog', 'blogs', 'news', 'item', 'items',
+  'page', 'pages', 'view', 'detail', 'details', 'content',
+  // Navigation paths
+  'home', 'index', 'main', 'default', 'about', 'contact',
+  'search', 'results', 'query', 'browse', 'explore', 'discover',
+  // User paths
+  'user', 'users', 'profile', 'profiles', 'account', 'accounts',
+  'channel', 'channels', 'creator', 'author',
+  // Common file/document paths
+  'docs', 'doc', 'document', 'documents', 'file', 'files',
+  'download', 'downloads', 'upload', 'uploads',
+  // API/technical paths
+  'api', 'data', 'json', 'xml', 'rss', 'feed', 'embed',
+  // Misc generic paths
+  'link', 'links', 'url', 'share', 'redirect', 'goto', 'go',
+]);
+
+/**
  * Suffix patterns for words that are likely nouns
  */
 export const NOUN_SUFFIX_PATTERNS: RegExp[] = [
@@ -277,10 +306,17 @@ export function isVideoStopword(word: string): boolean {
 }
 
 /**
- * Check if a word is in any stopword list (including video)
+ * Check if a word is a URL path stopword
+ */
+export function isUrlPathStopword(word: string): boolean {
+  return URL_PATH_STOPWORDS.has(word.toLowerCase());
+}
+
+/**
+ * Check if a word is in any stopword list (including video and URL)
  */
 export function isAnyStopword(word: string): boolean {
-  return isStopword(word) || isVideoStopword(word);
+  return isStopword(word) || isVideoStopword(word) || isUrlPathStopword(word);
 }
 
 /**

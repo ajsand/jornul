@@ -74,14 +74,21 @@ async function fetchYouTubeMetadata(url: string): Promise<UrlMetadata> {
     type: 'youtube',
     thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null,
     author: null,
-    keywords: [],
+    keywords: ['youtube'], // Always include platform as a keyword
     fetchedAt: Date.now(),
   };
 
   try {
+    // Add timeout for network requests (5 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     // Use YouTube's oEmbed endpoint (doesn't require API key)
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-    const response = await fetch(oembedUrl);
+    const response = await fetch(oembedUrl, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
 
     if (response.ok) {
       const data = await response.json();
@@ -91,15 +98,33 @@ async function fetchYouTubeMetadata(url: string): Promise<UrlMetadata> {
 
       // Extract keywords from title
       if (data.title) {
-        result.keywords = extractKeywordsFromText(data.title);
+        result.keywords = [...result.keywords, ...extractKeywordsFromText(data.title)];
       }
       if (data.author_name) {
         result.keywords.push(data.author_name.toLowerCase());
       }
+      
+      // Deduplicate keywords
+      result.keywords = [...new Set(result.keywords)];
+    } else {
+      result.error = `HTTP ${response.status}`;
+      // Provide a fallback title based on video ID
+      if (videoId) {
+        result.title = 'YouTube Video';
+      }
     }
-  } catch (error) {
-    console.error('Failed to fetch YouTube metadata:', error);
-    result.error = 'Failed to fetch YouTube metadata';
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.warn('YouTube metadata fetch timeout for:', url);
+      result.error = 'Request timeout';
+    } else {
+      console.error('Failed to fetch YouTube metadata:', error);
+      result.error = 'Network error';
+    }
+    // Provide fallback values for offline
+    if (videoId) {
+      result.title = 'YouTube Video';
+    }
   }
 
   return result;
@@ -201,36 +226,60 @@ async function fetchWebpageMetadata(url: string): Promise<UrlMetadata> {
       result.keywords = [...new Set(result.keywords)];
     }
   } catch (error: any) {
-    // CORS errors are expected for many sites
+    // CORS errors are expected for many sites - this is not a critical failure
     if (error.name === 'AbortError') {
       result.error = 'Request timeout';
     } else {
       result.error = 'Could not fetch page (CORS or network error)';
     }
 
-    // Fall back to extracting info from URL
+    // Fall back to extracting info from URL - this always works even offline
     try {
       const urlObj = new URL(url);
       result.siteName = urlObj.hostname.replace(/^www\./, '');
+      result.keywords = [result.siteName.split('.')[0]]; // Add domain name as keyword
 
       // Try to extract meaningful info from URL path
       const pathParts = urlObj.pathname.split('/').filter(p => p.length > 0);
-      if (pathParts.length > 0) {
-        const lastPart = pathParts[pathParts.length - 1];
+      
+      // Find the most meaningful path segment (not "watch", "video", etc.)
+      const ignoredSegments = new Set(['watch', 'video', 'post', 'article', 'blog', 'p', 'v', 'e', 'status']);
+      for (let i = pathParts.length - 1; i >= 0; i--) {
+        const part = pathParts[i];
+        const lowerPart = part.toLowerCase();
+        
+        // Skip short segments, pure numbers, and ignored segments
+        if (part.length <= 2 || /^\d+$/.test(part) || ignoredSegments.has(lowerPart)) {
+          continue;
+        }
+
         // Clean up URL slug to create a title
-        const cleanTitle = lastPart
+        const cleanTitle = part
           .replace(/[-_]/g, ' ')
           .replace(/\.[^.]+$/, '') // Remove file extension
-          .replace(/\d{4,}/g, '') // Remove long numbers
+          .replace(/\d{4,}/g, ' ') // Replace long numbers with space
+          .replace(/\s+/g, ' ')
           .trim();
+
         if (cleanTitle.length > 3) {
           result.title = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+          // Also extract keywords from the title
+          const titleKeywords = extractKeywordsFromText(cleanTitle);
+          result.keywords = [...result.keywords, ...titleKeywords];
+          break;
         }
       }
 
-      result.keywords = extractKeywordsFromText(result.siteName);
+      // If we still don't have a title, use the domain
+      if (!result.title) {
+        const domainName = result.siteName.split('.')[0];
+        result.title = domainName.charAt(0).toUpperCase() + domainName.slice(1);
+      }
+
+      // Deduplicate keywords
+      result.keywords = [...new Set(result.keywords)];
     } catch {
-      // Ignore URL parsing errors
+      // Ignore URL parsing errors - result will have null values which is safe
     }
   }
 
@@ -288,42 +337,95 @@ export async function analyzeMultipleUrls(urls: string[]): Promise<MultiUrlAnaly
   const metadataPromises = urls.map(url => fetchUrlMetadata(url));
   const metadataResults = await Promise.all(metadataPromises);
 
-  // Collect all keywords
+  // Collect all keywords and track frequency
   const allKeywords: string[] = [];
   const keywordCounts = new Map<string, number>();
+  const authors = new Set<string>();
+  const types = new Set<string>();
 
   for (const metadata of metadataResults) {
+    // Track authors
+    if (metadata.author) {
+      authors.add(metadata.author);
+    }
+    
+    // Track types
+    if (metadata.type) {
+      types.add(metadata.type);
+    }
+
+    // Count keywords
     for (const keyword of metadata.keywords) {
       allKeywords.push(keyword);
       keywordCounts.set(keyword, (keywordCounts.get(keyword) || 0) + 1);
     }
   }
 
-  // Find common themes (keywords that appear in multiple URLs)
+  // Find common themes (keywords that appear in multiple URLs or high-value single keywords)
   const commonThemes = Array.from(keywordCounts.entries())
-    .filter(([_, count]) => count > 1 || urls.length === 1)
-    .sort((a, b) => b[1] - a[1])
+    .filter(([keyword, count]) => {
+      // Include if appears in multiple URLs
+      if (count > 1) return true;
+      // For single URLs, include all keywords
+      if (urls.length === 1) return true;
+      // For multi-URL, include multi-word keywords (more specific)
+      if (keyword.includes(' ')) return true;
+      return false;
+    })
+    .sort((a, b) => {
+      // Sort by count first, then by word length (prefer multi-word)
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].includes(' ') ? -1 : 1;
+    })
     .slice(0, 10)
     .map(([keyword]) => keyword);
 
-  // Generate combined title
+  // Generate combined title based on content analysis
   let combinedTitle = '';
-
-  // If all URLs are from the same site, include site name
   const siteNames = [...new Set(metadataResults.map(m => m.siteName).filter(Boolean))];
+  const successfulTitles = metadataResults.filter(m => m.title).map(m => m.title!);
 
-  if (commonThemes.length > 0) {
-    // Use common themes to create title
-    const titleThemes = commonThemes.slice(0, 3).map(t =>
+  // Single URL - just use its title
+  if (urls.length === 1) {
+    combinedTitle = successfulTitles[0] || siteNames[0] || 'Link';
+  }
+  // Multiple URLs from same author (e.g., multiple videos from same channel)
+  else if (authors.size === 1 && authors.values().next().value) {
+    const author = authors.values().next().value;
+    if (urls.length === 2) {
+      combinedTitle = `${author} - 2 Videos`;
+    } else {
+      combinedTitle = `${author} Collection`;
+    }
+  }
+  // Multiple YouTube videos with common themes
+  else if (types.size === 1 && types.has('youtube') && commonThemes.length > 0) {
+    const topTheme = commonThemes[0].charAt(0).toUpperCase() + commonThemes[0].slice(1);
+    combinedTitle = `${topTheme} Videos`;
+  }
+  // Multiple URLs with common themes
+  else if (commonThemes.length >= 2) {
+    // Take top 2-3 themes and create a descriptive title
+    const titleThemes = commonThemes.slice(0, 2).map(t =>
       t.charAt(0).toUpperCase() + t.slice(1)
     );
-    combinedTitle = titleThemes.join(' - ');
-  } else if (metadataResults.length === 1 && metadataResults[0].title) {
-    combinedTitle = metadataResults[0].title;
-  } else if (siteNames.length === 1) {
-    combinedTitle = `Collection from ${siteNames[0]}`;
-  } else {
-    combinedTitle = 'Link Collection';
+    combinedTitle = titleThemes.join(' + ');
+  }
+  // URLs from the same site
+  else if (siteNames.length === 1 && siteNames[0]) {
+    combinedTitle = `${urls.length} Links from ${siteNames[0]}`;
+  }
+  // Mixed sources
+  else if (siteNames.length > 1) {
+    // Create title from unique site names
+    const uniqueSites = siteNames.slice(0, 3).map(s => 
+      s!.split('.')[0].charAt(0).toUpperCase() + s!.split('.')[0].slice(1)
+    );
+    combinedTitle = uniqueSites.join(' + ');
+  }
+  // Fallback
+  else {
+    combinedTitle = `${urls.length} Links`;
   }
 
   // Deduplicate all keywords
