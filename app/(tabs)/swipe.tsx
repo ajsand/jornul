@@ -17,12 +17,15 @@ import {
   SkipForward,
   RotateCcw,
   Filter,
+  Bug,
 } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
 import { SwipeMedia, SwipeDecision } from '@/lib/storage/types';
 import { SWIPE_MEDIA_TYPES, SwipeMediaType } from '@/lib/data/swipeCatalog';
 import { ensureCatalogSeeded } from '@/lib/services/swipeCatalogSeeder';
+import { getRankedBatch, RankReason, DEFAULT_CONFIG } from '@/lib/services/swipe/ranker';
+import { processSwipeFeedback } from '@/lib/services/aets/feedback';
 import { theme } from '@/lib/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -48,6 +51,8 @@ export default function SwipeScreen() {
     skip: 0,
     super_like: 0,
   });
+  const [debugMode, setDebugMode] = useState(__DEV__);
+  const [cardReasons, setCardReasons] = useState<RankReason[]>([]);
 
   // Animation values
   const position = useRef(new Animated.ValueXY()).current;
@@ -137,6 +142,10 @@ export default function SwipeScreen() {
         }));
 
         setSwipeHistory(prev => [...prev, { mediaId: currentCard.id, decision }]);
+
+        // Feed swipe signal to AETS for tag confidence adjustment (non-blocking)
+        processSwipeFeedback(rawDb, currentCard.id, decision, currentCard.tags_json)
+          .catch(err => console.warn('[AETS] Feedback failed:', err));
       } catch (error) {
         console.error('Failed to record swipe event:', error);
       }
@@ -202,10 +211,17 @@ export default function SwipeScreen() {
         allCards = allCards.filter(c => !swipedIds.has(c.id));
       }
 
-      // Shuffle cards for variety
-      const shuffled = allCards.sort(() => Math.random() - 0.5);
-      setCards(shuffled);
+      // Use intelligent ranking instead of random shuffle
+      const swipeHistory = await repos.getSwipeEventsWithMedia(rawDb, { limit: 100 });
+      const recentMedia = await repos.getRecentSwipedMedia(rawDb, DEFAULT_CONFIG.diversityWindow);
+      const rankedItems = getRankedBatch(allCards, swipeHistory, recentMedia, DEFAULT_CONFIG);
+
+      // Extract cards and reasons
+      setCards(rankedItems.map(r => r.item));
+      setCardReasons(rankedItems.map(r => r.reason));
       setCurrentIndex(0);
+
+      console.log(`[Swipe] Loaded ${rankedItems.length} ranked cards`);
     } catch (error) {
       console.error('Failed to load cards:', error);
     }
@@ -302,6 +318,17 @@ export default function SwipeScreen() {
     <SafeAreaView style={styles.container}>
       <Appbar.Header style={styles.header}>
         <Appbar.Content title="Discover" titleStyle={styles.headerTitle} />
+        {__DEV__ && (
+          <IconButton
+            icon={() => (
+              <Bug
+                size={22}
+                color={debugMode ? theme.colors.primary : theme.colors.onSurface}
+              />
+            )}
+            onPress={() => setDebugMode(!debugMode)}
+          />
+        )}
         <IconButton
           icon={() => (
             <Filter
@@ -433,6 +460,15 @@ export default function SwipeScreen() {
                   {SWIPE_MEDIA_TYPES.find(t => t.type === currentCard.type)?.label || currentCard.type}
                 </Text>
               </View>
+
+              {/* Debug badge - shows ranking reason */}
+              {debugMode && cardReasons[currentIndex] && (
+                <View style={styles.debugBadge}>
+                  <Text style={styles.debugBadgeText}>
+                    {cardReasons[currentIndex].toUpperCase()}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.cardContent}>
                 <Text variant="headlineMedium" style={styles.cardTitle} numberOfLines={2}>

@@ -6,3 +6,4 @@
 export * from './keyphrase';
 export * from './tagger';
 export * from './wordLists';
+export * from './feedback';

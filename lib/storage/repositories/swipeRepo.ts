@@ -7,6 +7,7 @@ import {
   SwipeMedia,
   SwipeSession,
   SwipeEvent,
+  SwipeEventWithMedia,
   SessionLedger,
   SwipeSignal,
   CreateSwipeMediaInput,
@@ -379,6 +380,72 @@ export async function countSwipeEventsByDecision(
   }
 
   return counts;
+}
+
+/**
+ * Get swipe events with joined media data for preference computation
+ * Used by the ranking algorithm to analyze user preferences
+ */
+export async function getSwipeEventsWithMedia(
+  db: SQLite.SQLiteDatabase,
+  filters?: { limit?: number; sessionId?: string }
+): Promise<SwipeEventWithMedia[]> {
+  let query = `
+    SELECT
+      e.id, e.session_id, e.media_id, e.decision, e.strength, e.created_at,
+      m.title as media_title,
+      m.type as media_type,
+      m.tags_json as media_tags_json,
+      m.popularity_score as media_popularity_score
+    FROM swipe_events e
+    INNER JOIN swipe_media m ON e.media_id = m.id
+  `;
+  const params: any[] = [];
+
+  if (filters?.sessionId) {
+    query += ' WHERE e.session_id = ?';
+    params.push(filters.sessionId);
+  }
+
+  query += ' ORDER BY e.created_at DESC';
+
+  if (filters?.limit) {
+    query += ' LIMIT ?';
+    params.push(filters.limit);
+  }
+
+  return await db.getAllAsync<SwipeEventWithMedia>(query, params);
+}
+
+/**
+ * Get recently swiped media IDs for diversity window calculation
+ * Used to avoid showing the same type/tags repeatedly
+ */
+export async function getRecentSwipedMediaIds(
+  db: SQLite.SQLiteDatabase,
+  limit: number
+): Promise<string[]> {
+  const results = await db.getAllAsync<{ media_id: string }>(
+    'SELECT media_id FROM swipe_events ORDER BY created_at DESC LIMIT ?',
+    [limit]
+  );
+  return results.map(r => r.media_id);
+}
+
+/**
+ * Get recent swiped media with full data for diversity calculations
+ */
+export async function getRecentSwipedMedia(
+  db: SQLite.SQLiteDatabase,
+  limit: number
+): Promise<SwipeMedia[]> {
+  return await db.getAllAsync<SwipeMedia>(
+    `SELECT m.* FROM swipe_events e
+     INNER JOIN swipe_media m ON e.media_id = m.id
+     ORDER BY e.created_at DESC
+     LIMIT ?`,
+    [limit]
+  );
 }
 
 // ============ Swipe Signals (legacy, from migration v1) ============

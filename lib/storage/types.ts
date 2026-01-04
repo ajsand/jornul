@@ -384,6 +384,15 @@ export interface ListSwipeEventsFilters {
   offset?: number;
 }
 
+// ============ Swipe Events with Media (for preference computation) ============
+
+export interface SwipeEventWithMedia extends SwipeEvent {
+  media_title: string;
+  media_type: string;
+  media_tags_json: string | null;
+  media_popularity_score: number;
+}
+
 // ============ Session Ledger (v3) ============
 
 export interface SessionLedger {
