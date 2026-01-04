@@ -6,8 +6,9 @@ import {
   Animated,
   PanResponder,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
-import { Appbar, Text, Chip, Button, IconButton } from 'react-native-paper';
+import { Appbar, Text, Chip, Button, IconButton, Dialog, Portal, Divider } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -18,13 +19,18 @@ import {
   RotateCcw,
   Filter,
   Bug,
+  User,
+  TrendingUp,
+  TrendingDown,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
 import { SwipeMedia, SwipeDecision } from '@/lib/storage/types';
 import { SWIPE_MEDIA_TYPES, SwipeMediaType } from '@/lib/data/swipeCatalog';
 import { ensureCatalogSeeded } from '@/lib/services/swipeCatalogSeeder';
-import { getRankedBatch, RankReason, DEFAULT_CONFIG } from '@/lib/services/swipe/ranker';
+import { getRankedBatch, RankReason, DEFAULT_CONFIG, computePreferences, PreferenceProfile } from '@/lib/services/swipe/ranker';
 import { processSwipeFeedback } from '@/lib/services/aets/feedback';
 import { theme } from '@/lib/theme';
 
@@ -53,6 +59,8 @@ export default function SwipeScreen() {
   });
   const [debugMode, setDebugMode] = useState(__DEV__);
   const [cardReasons, setCardReasons] = useState<RankReason[]>([]);
+  const [showProfile, setShowProfile] = useState(false);
+  const [preferences, setPreferences] = useState<PreferenceProfile | null>(null);
 
   // Animation values
   const position = useRef(new Animated.ValueXY()).current;
@@ -212,9 +220,13 @@ export default function SwipeScreen() {
       }
 
       // Use intelligent ranking instead of random shuffle
-      const swipeHistory = await repos.getSwipeEventsWithMedia(rawDb, { limit: 100 });
+      const swipeHistoryData = await repos.getSwipeEventsWithMedia(rawDb, { limit: 100 });
       const recentMedia = await repos.getRecentSwipedMedia(rawDb, DEFAULT_CONFIG.diversityWindow);
-      const rankedItems = getRankedBatch(allCards, swipeHistory, recentMedia, DEFAULT_CONFIG);
+      const rankedItems = getRankedBatch(allCards, swipeHistoryData, recentMedia, DEFAULT_CONFIG);
+
+      // Compute and store preferences for profile display
+      const userPreferences = computePreferences(swipeHistoryData, DEFAULT_CONFIG);
+      setPreferences(userPreferences);
 
       // Extract cards and reasons
       setCards(rankedItems.map(r => r.item));
@@ -329,6 +341,15 @@ export default function SwipeScreen() {
             onPress={() => setDebugMode(!debugMode)}
           />
         )}
+        <IconButton
+          icon={() => (
+            <User
+              size={22}
+              color={preferences && preferences.totalSwipes > 0 ? theme.colors.primary : theme.colors.onSurface}
+            />
+          )}
+          onPress={() => setShowProfile(true)}
+        />
         <IconButton
           icon={() => (
             <Filter
@@ -534,6 +555,131 @@ export default function SwipeScreen() {
           />
         </View>
       )}
+
+      {/* Profile Dialog */}
+      <Portal>
+        <Dialog visible={showProfile} onDismiss={() => setShowProfile(false)} style={styles.profileDialog}>
+          <Dialog.Title style={styles.profileTitle}>Your Preferences</Dialog.Title>
+          <Dialog.Content>
+            <ScrollView style={styles.profileScroll}>
+              {preferences && preferences.totalSwipes > 0 ? (
+                <>
+                  <View style={styles.profileStats}>
+                    <Text style={styles.profileSwipeCount}>
+                      Based on {preferences.totalSwipes} swipe{preferences.totalSwipes !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+
+                  {/* Top Liked Tags */}
+                  <View style={styles.profileSection}>
+                    <View style={styles.profileSectionHeader}>
+                      <TrendingUp size={18} color="#4CAF50" />
+                      <Text variant="titleSmall" style={styles.profileSectionTitle}>
+                        You lean toward...
+                      </Text>
+                    </View>
+                    <View style={styles.preferenceTags}>
+                      {Array.from(preferences.tags.entries())
+                        .filter(([, pref]) => pref.weight > 0.1)
+                        .sort((a, b) => b[1].weight - a[1].weight)
+                        .slice(0, 6)
+                        .map(([tag, pref]) => (
+                          <Chip
+                            key={tag}
+                            compact
+                            style={[styles.preferenceChip, styles.likeChip]}
+                            textStyle={styles.preferenceChipText}
+                            icon={() => <ThumbsUp size={12} color="#4CAF50" />}
+                          >
+                            {tag} ({Math.round(pref.weight * 100)}%)
+                          </Chip>
+                        ))}
+                      {Array.from(preferences.tags.entries()).filter(([, pref]) => pref.weight > 0.1).length === 0 && (
+                        <Text style={styles.noDataText}>Keep swiping to discover your interests!</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <Divider style={styles.profileDivider} />
+
+                  {/* Top Disliked Tags */}
+                  <View style={styles.profileSection}>
+                    <View style={styles.profileSectionHeader}>
+                      <TrendingDown size={18} color={theme.colors.error} />
+                      <Text variant="titleSmall" style={styles.profileSectionTitle}>
+                        Not for you...
+                      </Text>
+                    </View>
+                    <View style={styles.preferenceTags}>
+                      {Array.from(preferences.tags.entries())
+                        .filter(([, pref]) => pref.weight < -0.1)
+                        .sort((a, b) => a[1].weight - b[1].weight)
+                        .slice(0, 4)
+                        .map(([tag, pref]) => (
+                          <Chip
+                            key={tag}
+                            compact
+                            style={[styles.preferenceChip, styles.dislikeChip]}
+                            textStyle={styles.preferenceChipText}
+                            icon={() => <ThumbsDown size={12} color={theme.colors.error} />}
+                          >
+                            {tag}
+                          </Chip>
+                        ))}
+                      {Array.from(preferences.tags.entries()).filter(([, pref]) => pref.weight < -0.1).length === 0 && (
+                        <Text style={styles.noDataText}>No strong dislikes yet</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <Divider style={styles.profileDivider} />
+
+                  {/* Type Preferences */}
+                  <View style={styles.profileSection}>
+                    <View style={styles.profileSectionHeader}>
+                      <Star size={18} color="#FFD700" />
+                      <Text variant="titleSmall" style={styles.profileSectionTitle}>
+                        Favorite categories
+                      </Text>
+                    </View>
+                    <View style={styles.preferenceTags}>
+                      {Array.from(preferences.types.entries())
+                        .filter(([, pref]) => pref.weight > 0)
+                        .sort((a, b) => b[1].weight - a[1].weight)
+                        .slice(0, 5)
+                        .map(([type, pref]) => {
+                          const typeInfo = SWIPE_MEDIA_TYPES.find(t => t.type === type);
+                          return (
+                            <Chip
+                              key={type}
+                              compact
+                              style={[styles.preferenceChip, { backgroundColor: getTypeColor(type) + '30' }]}
+                              textStyle={styles.preferenceChipText}
+                            >
+                              {typeInfo?.label || type}
+                            </Chip>
+                          );
+                        })}
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.noDataContainer}>
+                  <User size={48} color={theme.colors.onSurfaceVariant} />
+                  <Text style={styles.noDataTitle}>No preferences yet</Text>
+                  <Text style={styles.noDataText}>
+                    Start swiping to discover your interests!{'\n'}
+                    Your preferences will appear here.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setShowProfile(false)}>Close</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -708,5 +854,72 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     backgroundColor: theme.colors.surface,
+  },
+  // Profile dialog styles
+  profileDialog: {
+    maxHeight: '80%',
+  },
+  profileTitle: {
+    color: theme.colors.onSurface,
+  },
+  profileScroll: {
+    maxHeight: 400,
+  },
+  profileStats: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profileSwipeCount: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
+  },
+  profileSection: {
+    marginVertical: 8,
+  },
+  profileSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  profileSectionTitle: {
+    color: theme.colors.onSurface,
+    fontWeight: '600',
+  },
+  profileDivider: {
+    marginVertical: 12,
+  },
+  preferenceTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  preferenceChip: {
+    marginBottom: 4,
+  },
+  likeChip: {
+    backgroundColor: '#E8F5E9',
+  },
+  dislikeChip: {
+    backgroundColor: theme.colors.errorContainer,
+  },
+  preferenceChipText: {
+    fontSize: 12,
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    padding: 24,
+  },
+  noDataTitle: {
+    color: theme.colors.onSurface,
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noDataText: {
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

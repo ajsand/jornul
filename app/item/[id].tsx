@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Linking, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Linking, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Appbar, Text, Chip, Card, Button, Snackbar, Divider, Dialog, Portal, TextInput as PaperInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { format } from 'date-fns';
-import { ExternalLink, Calendar, Clock, FileText, Plus, Tag } from 'lucide-react-native';
+import { ExternalLink, Calendar, Clock, FileText, Plus, Tag, Link2, ChevronRight } from 'lucide-react-native';
 import { JournalItem, db } from '@/lib/storage/db';
-import { MediaItemWithTags } from '@/lib/storage/types';
+import { MediaItem, MediaItemWithTags } from '@/lib/storage/types';
+import * as repos from '@/lib/storage/repositories';
 import { useJournalStore } from '@/lib/store';
 import { getMediaTitle } from '@/lib/utils/mediaHelpers';
 import { addManualTag } from '@/lib/services/aets';
@@ -26,6 +27,7 @@ export default function ItemScreen() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [addTagDialogVisible, setAddTagDialogVisible] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+  const [relatedItems, setRelatedItems] = useState<MediaItem[]>([]);
 
   useEffect(() => {
     loadItem();
@@ -65,6 +67,58 @@ export default function ItemScreen() {
       setLoading(false);
     }
   };
+
+  const loadRelatedItems = useCallback(async (currentItem: MediaItemWithTags) => {
+    if (!currentItem.tags || currentItem.tags.length === 0) {
+      setRelatedItems([]);
+      return;
+    }
+
+    try {
+      const rawDb = db.getRawDb();
+      const tagIds = currentItem.tags.map((t: any) => t.id);
+      
+      // Find items that share at least one tag with the current item
+      // Count shared tags and sort by most shared
+      const candidateItemIds = new Map<string, number>();
+      
+      for (const tagId of tagIds) {
+        const itemIds = await repos.getItemsForTag(rawDb, tagId, 20);
+        for (const itemId of itemIds) {
+          if (itemId !== currentItem.id) {
+            candidateItemIds.set(itemId, (candidateItemIds.get(itemId) || 0) + 1);
+          }
+        }
+      }
+
+      // Sort by number of shared tags (descending) and take top 5
+      const sortedCandidates = Array.from(candidateItemIds.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([itemId]) => itemId);
+
+      // Fetch the actual items
+      const items: MediaItem[] = [];
+      for (const itemId of sortedCandidates) {
+        const item = await repos.getMediaItem(rawDb, itemId);
+        if (item) {
+          items.push(item);
+        }
+      }
+
+      setRelatedItems(items);
+    } catch (error) {
+      console.error('Failed to load related items:', error);
+      setRelatedItems([]);
+    }
+  }, []);
+
+  // Load related items when the item changes
+  useEffect(() => {
+    if (item && !('clean_text' in item)) {
+      loadRelatedItems(item as MediaItemWithTags);
+    }
+  }, [item, loadRelatedItems]);
 
   const handleSaveNotes = async () => {
     if (!item || isSaving) return;
@@ -371,6 +425,46 @@ export default function ItemScreen() {
               )}
             </Card.Content>
           </Card>
+
+          {/* Related Items Section */}
+          {!isLegacyItem && relatedItems.length > 0 && (
+            <Card style={styles.card}>
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <Link2 size={20} color={theme.colors.onSurface} />
+                  <Text variant="titleMedium" style={styles.sectionTitle}>
+                    Related Items
+                  </Text>
+                </View>
+                <Text style={styles.relatedSubtext}>
+                  Items with similar tags
+                </Text>
+                
+                {relatedItems.map((relatedItem) => (
+                  <TouchableOpacity
+                    key={relatedItem.id}
+                    style={styles.relatedItem}
+                    onPress={() => router.push(`/item/${relatedItem.id}`)}
+                  >
+                    <TypeIcon type={relatedItem.type} size={20} color={theme.colors.primary} />
+                    <View style={styles.relatedItemContent}>
+                      <Text
+                        variant="bodyMedium"
+                        style={styles.relatedItemTitle}
+                        numberOfLines={1}
+                      >
+                        {relatedItem.title || 'Untitled'}
+                      </Text>
+                      <Text style={styles.relatedItemType}>
+                        {relatedItem.type}
+                      </Text>
+                    </View>
+                    <ChevronRight size={20} color={theme.colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                ))}
+              </Card.Content>
+            </Card>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -531,6 +625,32 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     fontStyle: 'italic',
     marginTop: 8,
+  },
+  relatedSubtext: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    marginBottom: 12,
+    marginTop: -4,
+  },
+  relatedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+  },
+  relatedItemContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  relatedItemTitle: {
+    color: theme.colors.onSurface,
+  },
+  relatedItemType: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    textTransform: 'capitalize',
+    marginTop: 2,
   },
   errorContainer: {
     flex: 1,
