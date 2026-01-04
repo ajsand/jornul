@@ -37,19 +37,6 @@ export function ImportProgressList({ items }: ImportProgressListProps) {
       }
     };
 
-    const getStatusColor = () => {
-      switch (item.status) {
-        case 'pending':
-          return theme.colors.onSurfaceVariant;
-        case 'importing':
-          return theme.colors.primary;
-        case 'success':
-          return '#4CAF50';
-        case 'error':
-          return theme.colors.error;
-      }
-    };
-
     return (
       <Card style={styles.card}>
         <Card.Content style={styles.cardContent}>

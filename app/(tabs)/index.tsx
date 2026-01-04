@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Appbar, Text, Chip, FAB } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,23 +7,42 @@ import { Plus } from 'lucide-react-native';
 import { JournalList } from '@/components/JournalList';
 import { useJournalStore } from '@/lib/store';
 import { db } from '@/lib/storage/db';
+import * as repos from '@/lib/storage/repositories';
 import { theme } from '@/lib/theme';
 
 export default function HomeScreen() {
   const { items, selectedTags, setItems, setSelectedTags, filteredItems } = useJournalStore();
   const [allTags, setAllTags] = useState<{ tag: string; count: number }[]>([]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       await db.init();
-      const journalItems = await db.queryAllItems();
-      const tags = await db.getAllTags();
+      const rawDb = db.getRawDb();
+
+      // Use modular repositories instead of deprecated db methods
+      const mediaItems = await repos.listMediaItems(rawDb, {
+        orderBy: 'created_at',
+        orderDirection: 'DESC',
+      });
+
+      // Convert MediaItem to legacy JournalItem format for store compatibility
+      const journalItems = await Promise.all(
+        mediaItems.map(async (item) => {
+          const itemTags = await repos.getTagsForItem(rawDb, item.id);
+          return {
+            id: item.id,
+            type: item.type as 'text' | 'image' | 'audio',
+            raw_path: item.local_uri ?? undefined,
+            clean_text: item.extracted_text || item.notes || '',
+            tags: itemTags.map(t => t.name),
+            created_at: item.created_at,
+          };
+        })
+      );
+
+      const tags = await repos.listTags(rawDb);
       setItems(journalItems);
-      setAllTags(tags);
+      setAllTags(tags.map(t => ({ tag: t.name, count: t.usage_count })));
     } catch (error) {
       console.error('Failed to load data:', error);
       // Add some sample data if database fails
@@ -38,7 +57,11 @@ export default function HomeScreen() {
       ];
       setItems(sampleItems);
     }
-  };
+  }, [setItems]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleTagPress = (tag: string) => {
     const newSelectedTags = selectedTags.includes(tag)

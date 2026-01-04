@@ -478,3 +478,48 @@ export async function getUniqueMediaTypes(
   );
   return results.map(r => r.type);
 }
+
+/**
+ * Get items that need URL enrichment (pendingUrlFetch = true in metadata)
+ * Used for retry logic and showing enrichment status in UI
+ */
+export async function getItemsNeedingEnrichment(
+  db: SQLite.SQLiteDatabase,
+  options?: { limit?: number }
+): Promise<MediaItem[]> {
+  let query = `
+    SELECT * FROM media_items
+    WHERE metadata_json IS NOT NULL
+      AND (
+        json_extract(metadata_json, '$.pendingUrlFetch') = 1
+        OR json_extract(metadata_json, '$.pendingUrlFetch') = 'true'
+      )
+    ORDER BY created_at DESC
+  `;
+
+  const params: any[] = [];
+
+  if (options?.limit) {
+    query += ' LIMIT ?';
+    params.push(options.limit);
+  }
+
+  return await db.getAllAsync<MediaItem>(query, params);
+}
+
+/**
+ * Count items that need URL enrichment
+ */
+export async function countItemsNeedingEnrichment(
+  db: SQLite.SQLiteDatabase
+): Promise<number> {
+  const result = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM media_items
+     WHERE metadata_json IS NOT NULL
+       AND (
+         json_extract(metadata_json, '$.pendingUrlFetch') = 1
+         OR json_extract(metadata_json, '$.pendingUrlFetch') = 'true'
+       )`
+  );
+  return result?.count ?? 0;
+}

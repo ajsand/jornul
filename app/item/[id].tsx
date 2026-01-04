@@ -27,29 +27,28 @@ export default function ItemScreen() {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [addTagDialogVisible, setAddTagDialogVisible] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+  const [tagSuggestions, setTagSuggestions] = useState<{id: number; name: string; usage_count: number}[]>([]);
   const [relatedItems, setRelatedItems] = useState<MediaItem[]>([]);
 
-  useEffect(() => {
-    loadItem();
-  }, [id]);
-
-  const loadItem = async () => {
+  const loadItem = useCallback(async () => {
     try {
       if (!id) return;
-      
+
       try {
         await db.init();
-        // Try new API first
-        const mediaItem = await db.getMediaItem(id);
+        const rawDb = db.getRawDb();
+        // Use modular repository instead of deprecated db method
+        const mediaItem = await repos.getMediaItem(rawDb, id);
         if (mediaItem) {
           setItem(mediaItem);
           setEditedNotes(mediaItem.notes || '');
           setHasUnsavedChanges(false);
           return;
         }
-        // Fallback to legacy API
-        const journalItem = await db.getItem(id);
-        setItem(journalItem);
+        // Fallback to checking the store for legacy items
+        const { items } = useJournalStore.getState();
+        const storeItem = items.find(item => item.id === id);
+        setItem(storeItem || null);
         setEditedNotes('');
         setHasUnsavedChanges(false);
       } catch (dbError) {
@@ -66,7 +65,11 @@ export default function ItemScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    loadItem();
+  }, [loadItem]);
 
   const loadRelatedItems = useCallback(async (currentItem: MediaItemWithTags) => {
     if (!currentItem.tags || currentItem.tags.length === 0) {
@@ -122,7 +125,7 @@ export default function ItemScreen() {
 
   const handleSaveNotes = async () => {
     if (!item || isSaving) return;
-    
+
     setIsSaving(true);
     try {
       const isLegacyItem = 'clean_text' in item;
@@ -131,8 +134,9 @@ export default function ItemScreen() {
         return;
       }
 
-      await db.updateMediaItem(item.id, { notes: editedNotes });
-      const updated = await db.getMediaItem(item.id);
+      const rawDb = db.getRawDb();
+      await repos.updateMediaItem(rawDb, item.id, { notes: editedNotes });
+      const updated = await repos.getMediaItem(rawDb, item.id);
       if (updated) {
         setItem(updated);
         setHasUnsavedChanges(false);
@@ -159,8 +163,9 @@ export default function ItemScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await db.detachTagFromItem(item.id, tagId);
-              const updated = await db.getMediaItem(item.id);
+              const rawDb = db.getRawDb();
+              await repos.detachTagFromItem(rawDb, item.id, tagId);
+              const updated = await repos.getMediaItem(rawDb, item.id);
               if (updated) {
                 setItem(updated);
                 showSnackbar('Tag removed');
@@ -175,23 +180,57 @@ export default function ItemScreen() {
     );
   };
 
-  const handleAddTag = async () => {
-    if (!item || !newTagName.trim()) return;
+  const handleAddTag = async (tagNameToAdd?: string) => {
+    const name = tagNameToAdd || newTagName.trim();
+    if (!item || !name) return;
 
     try {
       const rawDb = db.getRawDb();
-      await addManualTag(rawDb, item.id, newTagName.trim());
-      const updated = await db.getMediaItem(item.id);
+      await addManualTag(rawDb, item.id, name);
+      const updated = await repos.getMediaItem(rawDb, item.id);
       if (updated) {
         setItem(updated);
         showSnackbar('Tag added');
       }
       setAddTagDialogVisible(false);
       setNewTagName('');
+      setTagSuggestions([]);
     } catch (error) {
       console.error('Failed to add tag:', error);
       showSnackbar((error as Error).message || 'Failed to add tag');
     }
+  };
+
+  const handleTagNameChange = async (text: string) => {
+    setNewTagName(text);
+
+    // Fetch suggestions when user types at least 2 chars
+    if (text.trim().length >= 2 && item) {
+      try {
+        const rawDb = db.getRawDb();
+        const suggestions = await repos.findSimilarTags(rawDb, text.trim(), 5);
+        // Filter out tags already on the item
+        const isLegacy = 'clean_text' in item;
+        const itemTags = isLegacy
+          ? (item as JournalItem).tags || []
+          : (item as MediaItemWithTags).tags || [];
+        const currentTagNames = itemTags.map((t: any) =>
+          typeof t === 'string' ? t.toLowerCase() : t.name?.toLowerCase()
+        ).filter(Boolean);
+        const filtered = suggestions.filter(
+          s => !currentTagNames.includes(s.name.toLowerCase())
+        );
+        setTagSuggestions(filtered);
+      } catch {
+        setTagSuggestions([]);
+      }
+    } else {
+      setTagSuggestions([]);
+    }
+  };
+
+  const handleSelectSuggestion = (suggestion: {id: number; name: string}) => {
+    handleAddTag(suggestion.name);
   };
 
   const handleNotesChange = (text: string) => {
@@ -403,20 +442,29 @@ export default function ItemScreen() {
                       </Chip>
                     ))
                   ) : (
-                    (displayTags as {id: number; name: string; kind?: string; source?: string}[]).map((tag) => (
-                      <Chip
-                        key={tag.id}
-                        style={[
-                          styles.tag,
-                          tag.kind === 'emergent' && styles.emergentTag,
-                          tag.source === 'user' && styles.manualTag,
-                        ]}
-                        textStyle={styles.tagText}
-                        onClose={() => handleRemoveTag(tag.id, tag.name)}
-                        compact
-                      >
-                        {tag.name}
-                      </Chip>
+                    (displayTags as {id: number; name: string; kind?: string; source?: string; confidence?: number | null}[]).map((tag) => (
+                      <View key={tag.id} style={styles.tagWrapper}>
+                        <Chip
+                          style={[
+                            styles.tag,
+                            tag.kind === 'emergent' && styles.emergentTag,
+                            tag.source === 'user' && styles.manualTag,
+                          ]}
+                          textStyle={styles.tagText}
+                          onClose={() => handleRemoveTag(tag.id, tag.name)}
+                          compact
+                        >
+                          {tag.name}
+                        </Chip>
+                        {tag.confidence != null && tag.source !== 'user' && (
+                          <View
+                            style={[
+                              styles.confidenceDot,
+                              { opacity: Math.max(0.3, tag.confidence) },
+                            ]}
+                          />
+                        )}
+                      </View>
                     ))
                   )}
                 </View>
@@ -470,25 +518,46 @@ export default function ItemScreen() {
 
       {/* Add Tag Dialog */}
       <Portal>
-        <Dialog visible={addTagDialogVisible} onDismiss={() => setAddTagDialogVisible(false)}>
+        <Dialog visible={addTagDialogVisible} onDismiss={() => {
+          setAddTagDialogVisible(false);
+          setTagSuggestions([]);
+        }}>
           <Dialog.Title>Add Tag</Dialog.Title>
           <Dialog.Content>
             <PaperInput
               label="Tag name"
               value={newTagName}
-              onChangeText={setNewTagName}
+              onChangeText={handleTagNameChange}
               mode="outlined"
               autoFocus
             />
+            {tagSuggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                <Text style={styles.suggestionsLabel}>Suggestions:</Text>
+                <View style={styles.suggestionsChips}>
+                  {tagSuggestions.map(suggestion => (
+                    <Chip
+                      key={suggestion.id}
+                      onPress={() => handleSelectSuggestion(suggestion)}
+                      style={styles.suggestionChip}
+                      compact
+                    >
+                      {suggestion.name} ({suggestion.usage_count})
+                    </Chip>
+                  ))}
+                </View>
+              </View>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => {
               setAddTagDialogVisible(false);
               setNewTagName('');
+              setTagSuggestions([]);
             }}>
               Cancel
             </Button>
-            <Button onPress={handleAddTag} disabled={!newTagName.trim()}>
+            <Button onPress={() => handleAddTag()} disabled={!newTagName.trim()}>
               Add
             </Button>
           </Dialog.Actions>
@@ -609,8 +678,20 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 8,
   },
+  tagWrapper: {
+    position: 'relative',
+  },
   tag: {
     backgroundColor: theme.colors.surfaceVariant,
+  },
+  confidenceDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.tertiary,
   },
   emergentTag: {
     backgroundColor: theme.colors.tertiaryContainer,
@@ -670,5 +751,21 @@ const styles = StyleSheet.create({
   },
   snackbar: {
     backgroundColor: theme.colors.inverseSurface,
+  },
+  suggestionsContainer: {
+    marginTop: 12,
+  },
+  suggestionsLabel: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 8,
+  },
+  suggestionsChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  suggestionChip: {
+    backgroundColor: theme.colors.secondaryContainer,
   },
 });

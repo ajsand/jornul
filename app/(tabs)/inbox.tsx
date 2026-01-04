@@ -17,6 +17,7 @@ import {
   Video,
   FileType,
   RotateCcw,
+  Globe,
 } from 'lucide-react-native';
 import { db } from '@/lib/storage/db';
 import * as repos from '@/lib/storage/repositories';
@@ -74,6 +75,7 @@ const STATUS_CONFIG = {
 export default function InboxScreen() {
   const [jobs, setJobs] = useState<JobWithItem[]>([]);
   const [stats, setStats] = useState({ pending: 0, running: 0, done: 0, failed: 0 });
+  const [pendingEnrichmentCount, setPendingEnrichmentCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [runnerActive, setRunnerActive] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
@@ -150,6 +152,10 @@ export default function InboxScreen() {
       // Get stats
       const jobStats = await getJobStats();
       setStats(jobStats);
+
+      // Get pending enrichment count
+      const enrichmentCount = await repos.countItemsNeedingEnrichment(rawDb);
+      setPendingEnrichmentCount(enrichmentCount);
 
       // Check runner status
       setRunnerActive(isJobRunnerActive());
@@ -281,6 +287,20 @@ export default function InboxScreen() {
       }
       return `${completed} of ${total} done`;
     }
+
+    // Check if this is a URL item being enriched
+    if (job.item && job.status === 'running') {
+      try {
+        const metadata = job.item.metadata_json ? JSON.parse(job.item.metadata_json) : {};
+        if (metadata.pendingUrlFetch || metadata.urls?.length > 0) {
+          const urlCount = metadata.urls?.length || 1;
+          return `Fetching ${urlCount} link${urlCount > 1 ? 's' : ''}...`;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
     return job.kind.replace(/_/g, ' ');
   };
 
@@ -393,6 +413,15 @@ export default function InboxScreen() {
             {stats.failed} failed
           </Chip>
         )}
+        {pendingEnrichmentCount > 0 && (
+          <Chip
+            icon={() => <Globe size={14} color={theme.colors.secondary} />}
+            compact
+            style={styles.enrichmentChip}
+          >
+            {pendingEnrichmentCount} pending links
+          </Chip>
+        )}
       </View>
       {stats.failed > 0 && (
         <View style={styles.retryAllContainer}>
@@ -498,6 +527,9 @@ const styles = StyleSheet.create({
   },
   statChip: {
     backgroundColor: theme.colors.surfaceVariant,
+  },
+  enrichmentChip: {
+    backgroundColor: theme.colors.secondaryContainer,
   },
   listContent: {
     padding: 12,

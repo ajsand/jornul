@@ -86,7 +86,13 @@ export async function upsertTag(
   const validatedName = validateTagName(name);
   const slug = generateSlug(validatedName);
 
-  // Try to insert, ignore if exists
+  // Check for case-insensitive match first (deduplication)
+  const existingTag = await getTagByNameCaseInsensitive(db, validatedName);
+  if (existingTag) {
+    return existingTag; // Reuse existing tag even if case differs
+  }
+
+  // No existing match - create new tag
   await db.runAsync(
     'INSERT OR IGNORE INTO tags (name, slug, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     [validatedName, slug, kind, now, now]
@@ -116,6 +122,51 @@ export async function getTagByName(
   name: string
 ): Promise<Tag | null> {
   return await db.getFirstAsync<Tag>('SELECT * FROM tags WHERE name = ?', [name]);
+}
+
+/**
+ * Find tag by name with case-insensitive matching
+ * Returns the existing tag if a case-variant exists (e.g., "NBA" when searching for "nba")
+ */
+export async function getTagByNameCaseInsensitive(
+  db: SQLite.SQLiteDatabase,
+  name: string
+): Promise<Tag | null> {
+  return await db.getFirstAsync<Tag>(
+    'SELECT * FROM tags WHERE LOWER(name) = LOWER(?)',
+    [name.trim()]
+  );
+}
+
+/**
+ * Find similar tags (fuzzy matching for autocomplete)
+ * Returns tags that start with or contain the search term
+ */
+export async function findSimilarTags(
+  db: SQLite.SQLiteDatabase,
+  searchTerm: string,
+  limit: number = 10
+): Promise<TagWithCount[]> {
+  const term = searchTerm.trim().toLowerCase();
+  if (!term) return [];
+
+  // Prioritize: exact match, then starts-with, then contains
+  return await db.getAllAsync<TagWithCount>(
+    `SELECT t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at,
+            COUNT(it.item_id) as usage_count,
+            CASE
+              WHEN LOWER(t.name) = ? THEN 0
+              WHEN LOWER(t.name) LIKE ? THEN 1
+              ELSE 2
+            END as match_priority
+     FROM tags t
+     LEFT JOIN item_tags it ON t.id = it.tag_id
+     WHERE LOWER(t.name) LIKE ?
+     GROUP BY t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at
+     ORDER BY match_priority ASC, usage_count DESC
+     LIMIT ?`,
+    [term, `${term}%`, `%${term}%`, limit]
+  );
 }
 
 export async function getTagBySlug(

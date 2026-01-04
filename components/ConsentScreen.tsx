@@ -11,7 +11,7 @@
  * - Preview and Start buttons
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import {
   Text,
@@ -79,12 +79,7 @@ export function ConsentScreen({
   const [availableTopics, setAvailableTopics] = useState<TagWithCount[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Load available topics on mount
-  useEffect(() => {
-    loadTopics();
-  }, []);
-
-  const loadTopics = async () => {
+  const loadTopics = useCallback(async () => {
     try {
       setLoading(true);
       await db.init();
@@ -107,7 +102,12 @@ export function ConsentScreen({
     } finally {
       setLoading(false);
     }
-  };
+  }, [pendingSession.importedSignature.topTags, updateConsentConfig]);
+
+  // Load available topics on mount
+  useEffect(() => {
+    loadTopics();
+  }, [loadTopics]);
 
   const handleModeChange = (mode: string) => {
     updateConsentConfig({ mode: mode as ConsentMode });
