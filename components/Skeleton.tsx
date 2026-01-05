@@ -4,13 +4,13 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Dimensions, ViewStyle } from 'react-native';
+import { View, StyleSheet, Animated, Dimensions, ViewStyle, DimensionValue } from 'react-native';
 import { theme } from '@/lib/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface SkeletonProps {
-  width?: number | string;
+  width?: DimensionValue;
   height?: number;
   borderRadius?: number;
   style?: ViewStyle;
@@ -44,7 +44,7 @@ export function Skeleton({ width = '100%', height = 16, borderRadius = 4, style 
       style={[
         styles.skeleton,
         {
-          width: typeof width === 'number' ? width : width,
+          width,
           height,
           borderRadius,
         },
