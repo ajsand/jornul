@@ -8,7 +8,7 @@ export type TagSource = 'heuristic' | 'ml' | 'user';
 export type TagKind = 'emergent' | 'manual' | 'system';
 export type SwipeDirection = 'like' | 'dislike';
 export type SwipeDecision = 'like' | 'dislike' | 'skip' | 'super_like';
-export type CompareMode = 'friend' | 'heart';
+export type CompareMode = 'friend' | 'heart' | 'custom';
 export type ShareLevel = 'title' | 'snippet' | 'full';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 export type ProcessingStatus = 'pending' | 'processing' | 'done' | 'failed' | 'skipped';
@@ -451,6 +451,7 @@ export interface UpdateTagInput {
   slug?: string | null;
   kind?: TagKind;
 }
+
 
 
 

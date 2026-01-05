@@ -13,8 +13,8 @@ import {
   UpdateSessionLedgerInput,
   ListSessionLedgerFilters,
   ShareLevel,
+  CompareMode,
 } from '../types';
-import { ConsentMode } from '../../sync/types';
 
 // ============ Compare Sessions ============
 
@@ -58,7 +58,7 @@ export async function getCompareSession(
 
   return {
     id: row.id,
-    mode: row.mode as ConsentMode,
+    mode: row.mode as CompareMode,
     scope_filters: row.scope_filters,
     provider: row.provider,
     created_at: row.created_at,
@@ -120,7 +120,7 @@ export async function deleteCompareSession(
 export async function listCompareSessions(
   db: SQLite.SQLiteDatabase,
   filters?: {
-    mode?: ConsentMode;
+    mode?: CompareMode;
     limit?: number;
     offset?: number;
   }
@@ -160,7 +160,7 @@ export async function listCompareSessions(
 
   return rows.map(row => ({
     id: row.id,
-    mode: row.mode as ConsentMode,
+    mode: row.mode as CompareMode,
     scope_filters: row.scope_filters,
     provider: row.provider,
     created_at: row.created_at,

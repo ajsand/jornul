@@ -12,6 +12,9 @@ import {
   CreateMediaMetaInput,
   UpdateMediaMetaInput,
   ListMediaItemsFilters,
+  Tag,
+  TagKind,
+  TagSource,
 } from '../types';
 import { upsertFtsEntry, deleteFtsEntry } from './ftsRepo';
 
@@ -123,17 +126,8 @@ export async function getMediaItemsBatch(
     ids
   );
 
-  // Group tags by item_id
-  const tagsByItemId = new Map<string, Array<{
-    id: number;
-    name: string;
-    slug: string | null;
-    kind: string;
-    created_at: number;
-    updated_at: number | null;
-    confidence: number | null;
-    source: string;
-  }>>();
+  // Group tags by item_id with proper typing
+  const tagsByItemId = new Map<string, Array<Tag & { confidence: number | null; source: TagSource }>>();
 
   for (const tag of tagsData) {
     if (!tagsByItemId.has(tag.item_id)) {
@@ -143,11 +137,11 @@ export async function getMediaItemsBatch(
       id: tag.id,
       name: tag.name,
       slug: tag.slug,
-      kind: tag.kind || 'manual',
+      kind: (tag.kind as TagKind) || 'manual',
       created_at: tag.created_at,
       updated_at: tag.updated_at,
       confidence: tag.confidence,
-      source: tag.source,
+      source: tag.source as TagSource,
     });
   }
 
