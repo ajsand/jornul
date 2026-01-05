@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { theme } from '@/lib/theme';
@@ -11,18 +11,54 @@ import { Onboarding } from '@/components/Onboarding';
 
 const ONBOARDING_KEY = 'journallink_onboarding_complete';
 
+/**
+ * Platform-agnostic storage helpers for onboarding state
+ * Uses SecureStore on native, localStorage on web
+ */
+async function getOnboardingFlag(): Promise<boolean> {
+  try {
+    if (Platform.OS === 'web') {
+      // Use localStorage directly on web (more reliable than SecureStore web shim)
+      const value = localStorage.getItem(ONBOARDING_KEY);
+      return value === 'true';
+    } else {
+      // Use SecureStore on native
+      const value = await SecureStore.getItemAsync(ONBOARDING_KEY);
+      return value === 'true';
+    }
+  } catch (error) {
+    console.warn('[Layout] Failed to get onboarding flag:', error);
+    return false;
+  }
+}
+
+async function setOnboardingFlag(value: boolean): Promise<void> {
+  try {
+    if (Platform.OS === 'web') {
+      // Use localStorage directly on web
+      localStorage.setItem(ONBOARDING_KEY, value ? 'true' : 'false');
+    } else {
+      // Use SecureStore on native
+      await SecureStore.setItemAsync(ONBOARDING_KEY, value ? 'true' : 'false');
+    }
+  } catch (error) {
+    console.warn('[Layout] Failed to set onboarding flag:', error);
+    // Don't throw - allow app to continue
+  }
+}
+
 export default function RootLayout() {
   useFrameworkReady();
 
   const [isLoading, setIsLoading] = useState(true);
   const { hasSeenOnboarding, setHasSeenOnboarding } = useSettingsStore();
 
-  // Load onboarding state from secure storage on mount
+  // Load onboarding state from storage on mount
   useEffect(() => {
     async function loadOnboardingState() {
       try {
-        const value = await SecureStore.getItemAsync(ONBOARDING_KEY);
-        if (value === 'true') {
+        const completed = await getOnboardingFlag();
+        if (completed) {
           setHasSeenOnboarding(true);
         }
       } catch (error) {
@@ -36,14 +72,10 @@ export default function RootLayout() {
 
   // Handle onboarding completion
   const handleOnboardingComplete = async () => {
-    try {
-      await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
-      setHasSeenOnboarding(true);
-    } catch (error) {
-      console.error('[Layout] Failed to save onboarding state:', error);
-      // Still update the store to let user proceed
-      setHasSeenOnboarding(true);
-    }
+    // Update store immediately for instant UI response
+    setHasSeenOnboarding(true);
+    // Persist to storage (async, non-blocking)
+    await setOnboardingFlag(true);
   };
 
   // Show loading spinner while checking onboarding state
