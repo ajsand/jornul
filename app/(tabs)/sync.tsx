@@ -669,8 +669,9 @@ export default function SyncScreen() {
                 importedSignature: {
                   deviceId: 'unknown',
                   topTags: [],
-                  swipeSummary: { totalLikes: 0, totalFavorites: 0, topLikedTags: [], topFavoritedTags: [] },
-                  createdAt: Date.now(),
+                  swipeSummary: { totalLikes: 0, totalDislikes: 0, totalFavorites: 0, totalSkips: 0 },
+                  recentTopics: [],
+                  timestamp: Date.now(),
                 },
                 importedAt: Date.now(),
                 status: 'awaiting_consent',

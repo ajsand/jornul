@@ -90,7 +90,13 @@ export class BLEManager {
       const mockSignature: DeviceSignature = {
         deviceId: device.id,
         topTags: ['travel', 'food', 'tech', 'books'],
-        avgEmbed: new Array(128).fill(0).map(() => Math.random() * 2 - 1),
+        swipeSummary: {
+          totalLikes: 0,
+          totalDislikes: 0,
+          totalFavorites: 0,
+          totalSkips: 0,
+        },
+        recentTopics: ['cooking', 'photography'],
         timestamp: Date.now(),
       };
       
