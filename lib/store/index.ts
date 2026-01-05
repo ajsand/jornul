@@ -17,6 +17,7 @@ interface JournalState {
   selectedTags: string[];
   setItems: (items: JournalItem[]) => void;
   addItem: (item: JournalItem) => void;
+  removeItem: (id: string) => void;
   setSelectedTags: (tags: string[]) => void;
   filteredItems: () => JournalItem[];
 }
@@ -79,6 +80,7 @@ const useJournalStore = create<JournalState>((set, get) => ({
   selectedTags: [],
   setItems: (items) => set({ items }),
   addItem: (item) => set((state) => ({ items: [item, ...state.items] })),
+  removeItem: (id) => set((state) => ({ items: state.items.filter(item => item.id !== id) })),
   setSelectedTags: (tags) => set({ selectedTags: tags }),
   filteredItems: () => {
     const { items, selectedTags } = get();

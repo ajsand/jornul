@@ -4,7 +4,7 @@ import { Appbar, Text, Chip, Card, Button, Snackbar, Divider, Dialog, Portal, Te
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { format } from 'date-fns';
-import { ExternalLink, Calendar, Clock, FileText, Plus, Tag, Link2, ChevronRight } from 'lucide-react-native';
+import { ExternalLink, Calendar, Clock, FileText, Plus, Tag, Link2, ChevronRight, Trash2 } from 'lucide-react-native';
 import { JournalItem, db } from '@/lib/storage/db';
 import { MediaItem, MediaItemWithTags } from '@/lib/storage/types';
 import * as repos from '@/lib/storage/repositories';
@@ -256,6 +256,35 @@ export default function ItemScreen() {
     }
   };
 
+  const handleDeleteItem = () => {
+    if (!item) return;
+
+    Alert.alert(
+      'Delete Item',
+      'Are you sure you want to delete this item? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const rawDb = db.getRawDb();
+              await repos.deleteMediaItem(rawDb, item.id);
+              // Update Zustand store to reflect deletion immediately
+              const { removeItem } = useJournalStore.getState();
+              removeItem(item.id);
+              router.back();
+            } catch (error) {
+              console.error('Failed to delete item:', error);
+              showSnackbar('Failed to delete item');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const showSnackbar = (message: string) => {
     setSnackbarMessage(message);
     setSnackbarVisible(true);
@@ -307,6 +336,13 @@ export default function ItemScreen() {
       <Appbar.Header style={styles.header}>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={displayTitle} titleStyle={styles.headerTitle} />
+        {!isLegacyItem && (
+          <Appbar.Action
+            icon={() => <Trash2 size={22} color={theme.colors.error} />}
+            onPress={handleDeleteItem}
+            accessibilityLabel="Delete item"
+          />
+        )}
       </Appbar.Header>
 
       <KeyboardAvoidingView 
