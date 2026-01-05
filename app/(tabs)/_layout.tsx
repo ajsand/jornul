@@ -2,6 +2,11 @@ import { Tabs } from 'expo-router';
 import { Inbox, Archive, PenLine, Wifi, Settings, Layers } from 'lucide-react-native';
 import { theme } from '@/lib/theme';
 
+// Configure initial route for tabs - ensures consistent navigation on web and mobile
+export const unstable_settings = {
+  initialRouteName: 'inbox',
+};
+
 export default function TabLayout() {
   return (
     <Tabs
