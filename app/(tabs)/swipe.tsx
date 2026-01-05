@@ -30,7 +30,16 @@ import * as repos from '@/lib/storage/repositories';
 import { SwipeMedia, SwipeDecision } from '@/lib/storage/types';
 import { SWIPE_MEDIA_TYPES, SwipeMediaType } from '@/lib/data/swipeCatalog';
 import { ensureCatalogSeeded } from '@/lib/services/swipeCatalogSeeder';
-import { getRankedBatch, RankReason, DEFAULT_CONFIG, computePreferences, PreferenceProfile } from '@/lib/services/swipe/ranker';
+import {
+  getRankedBatch,
+  RankReason,
+  DEFAULT_CONFIG,
+  computePreferences,
+  computeVaultPreferences,
+  mergePreferences,
+  PreferenceProfile,
+  VaultItemSummary,
+} from '@/lib/services/swipe/ranker';
 import { processSwipeFeedback } from '@/lib/services/aets/feedback';
 import { theme } from '@/lib/theme';
 import { swipeHaptic, successHaptic, lightHaptic } from '@/lib/utils/haptics';
@@ -240,9 +249,37 @@ export default function SwipeScreen() {
       const recentMedia = await repos.getRecentSwipedMedia(rawDb, DEFAULT_CONFIG.diversityWindow);
       const rankedItems = getRankedBatch(allCards, swipeHistoryData, recentMedia, DEFAULT_CONFIG);
 
-      // Compute and store preferences for profile display
-      const userPreferences = computePreferences(swipeHistoryData, DEFAULT_CONFIG);
-      setPreferences(userPreferences);
+      // Compute preferences from both swipes AND vault items
+      const swipePreferences = computePreferences(swipeHistoryData, DEFAULT_CONFIG);
+
+      // Load vault items for combined preference computation
+      let combinedPreferences = swipePreferences;
+      try {
+        const vaultItems = await repos.listMediaItems(rawDb, { limit: 100, orderBy: 'created_at', orderDirection: 'DESC' });
+        if (vaultItems.length > 0) {
+          // Get tags for each vault item
+          const vaultItemSummaries: VaultItemSummary[] = await Promise.all(
+            vaultItems.map(async (item) => {
+              const tags = await repos.getTagsForItem(rawDb, item.id);
+              return {
+                id: item.id,
+                type: item.type,
+                tags: tags.map(t => t.name),
+                created_at: item.created_at,
+              };
+            })
+          );
+          
+          // Compute vault preferences and merge with swipe preferences
+          const vaultPrefs = computeVaultPreferences(vaultItemSummaries, DEFAULT_CONFIG);
+          combinedPreferences = mergePreferences(swipePreferences, vaultPrefs);
+          console.log(`[Swipe] Merged preferences: ${swipePreferences.totalSwipes} swipes + ${vaultItems.length} vault items`);
+        }
+      } catch (vaultError) {
+        console.warn('[Swipe] Failed to load vault items for preferences:', vaultError);
+      }
+      
+      setPreferences(combinedPreferences);
 
       // Extract cards and reasons
       setCards(rankedItems.map(r => r.item));
@@ -604,7 +641,7 @@ export default function SwipeScreen() {
                 <>
                   <View style={styles.profileStats}>
                     <Text style={styles.profileSwipeCount}>
-                      Based on {preferences.totalSwipes} swipe{preferences.totalSwipes !== 1 ? 's' : ''}
+                      Based on {preferences.totalSwipes} interaction{preferences.totalSwipes !== 1 ? 's' : ''}
                     </Text>
                   </View>
 
@@ -843,6 +880,21 @@ const styles = StyleSheet.create({
   },
   cardTagText: {
     fontSize: 11,
+  },
+  debugBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    zIndex: 10,
+  },
+  debugBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
   },
   overlayLabel: {
     position: 'absolute',

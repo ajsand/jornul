@@ -9,7 +9,7 @@
  * - Epsilon-greedy exploration: Random exploration items
  */
 
-import { SwipeMedia, SwipeEventWithMedia, SwipeDecision } from '@/lib/storage/types';
+import { SwipeMedia, SwipeEventWithMedia, SwipeDecision, TagWithCount, MediaType } from '@/lib/storage/types';
 
 // ============ Configuration ============
 
@@ -367,4 +367,142 @@ export function getRankedBatch(
 
   console.log(`[Ranker] Warm start mode - ${preferences.totalSwipes} swipes analyzed`);
   return getWarmBatch(candidates, preferences, recentMedia, undefined, config);
+}
+
+// ============ Vault Integration ============
+
+/**
+ * Vault item summary for preference computation
+ */
+export interface VaultItemSummary {
+  id: string;
+  type: MediaType;
+  tags: string[];
+  created_at: number;
+}
+
+/**
+ * Compute preference signals from vault (saved) items
+ * Vault items are treated as implicit "likes" since the user chose to save them
+ */
+export function computeVaultPreferences(
+  vaultItems: VaultItemSummary[],
+  config: RankerConfig = DEFAULT_CONFIG
+): PreferenceProfile {
+  const now = Date.now();
+  const tagScores = new Map<string, { positive: number; count: number }>();
+  const typeScores = new Map<string, { positive: number; count: number }>();
+
+  // Vault items are weighted lower than explicit swipes (0.5 vs 1.0 for likes)
+  const baseWeight = 0.5;
+
+  for (const item of vaultItems) {
+    const recency = recencyDecay(item.created_at, now, config.decayHalfLife);
+    const weight = baseWeight * recency;
+
+    // Accumulate tag scores (positive only - saved items are implicit likes)
+    for (const tag of item.tags) {
+      const existing = tagScores.get(tag) || { positive: 0, count: 0 };
+      existing.positive += weight;
+      existing.count += 1;
+      tagScores.set(tag, existing);
+    }
+
+    // Accumulate type scores
+    const existingType = typeScores.get(item.type) || { positive: 0, count: 0 };
+    existingType.positive += weight;
+    existingType.count += 1;
+    typeScores.set(item.type, existingType);
+  }
+
+  // Convert to preference format (all positive since vault = implicit likes)
+  const tagPrefs = new Map<string, TagPreference>();
+  for (const [tag, scores] of tagScores) {
+    // Normalize by sqrt of count to avoid over-weighting common tags
+    const normalizedWeight = scores.positive / Math.sqrt(Math.max(1, scores.count));
+    tagPrefs.set(tag, { weight: Math.min(1, normalizedWeight), count: scores.count });
+  }
+
+  const typePrefs = new Map<string, TypePreference>();
+  for (const [type, scores] of typeScores) {
+    const normalizedWeight = scores.positive / Math.sqrt(Math.max(1, scores.count));
+    typePrefs.set(type, { weight: Math.min(1, normalizedWeight), count: scores.count });
+  }
+
+  return {
+    tags: tagPrefs,
+    types: typePrefs,
+    totalSwipes: vaultItems.length, // Treat each vault item as 1 "swipe equivalent"
+    lastUpdated: now,
+  };
+}
+
+/**
+ * Merge swipe-based preferences with vault-based preferences
+ * Swipe preferences are weighted more heavily (explicit signals)
+ * Vault preferences provide additional context (implicit signals)
+ */
+export function mergePreferences(
+  swipePrefs: PreferenceProfile,
+  vaultPrefs: PreferenceProfile,
+  swipeWeight: number = 0.7,
+  vaultWeight: number = 0.3
+): PreferenceProfile {
+  const mergedTags = new Map<string, TagPreference>();
+  const mergedTypes = new Map<string, TypePreference>();
+
+  // Collect all unique tags
+  const allTags = new Set([...swipePrefs.tags.keys(), ...vaultPrefs.tags.keys()]);
+  for (const tag of allTags) {
+    const swipePref = swipePrefs.tags.get(tag);
+    const vaultPref = vaultPrefs.tags.get(tag);
+
+    let combinedWeight = 0;
+    let combinedCount = 0;
+
+    if (swipePref) {
+      combinedWeight += swipePref.weight * swipeWeight;
+      combinedCount += swipePref.count;
+    }
+    if (vaultPref) {
+      combinedWeight += vaultPref.weight * vaultWeight;
+      combinedCount += vaultPref.count;
+    }
+
+    mergedTags.set(tag, {
+      weight: Math.max(-1, Math.min(1, combinedWeight)),
+      count: combinedCount,
+    });
+  }
+
+  // Collect all unique types
+  const allTypes = new Set([...swipePrefs.types.keys(), ...vaultPrefs.types.keys()]);
+  for (const type of allTypes) {
+    const swipePref = swipePrefs.types.get(type);
+    const vaultPref = vaultPrefs.types.get(type);
+
+    let combinedWeight = 0;
+    let combinedCount = 0;
+
+    if (swipePref) {
+      combinedWeight += swipePref.weight * swipeWeight;
+      combinedCount += swipePref.count;
+    }
+    if (vaultPref) {
+      combinedWeight += vaultPref.weight * vaultWeight;
+      combinedCount += vaultPref.count;
+    }
+
+    mergedTypes.set(type, {
+      weight: Math.max(-1, Math.min(1, combinedWeight)),
+      count: combinedCount,
+    });
+  }
+
+  return {
+    tags: mergedTags,
+    types: mergedTypes,
+    totalSwipes: swipePrefs.totalSwipes + vaultPrefs.totalSwipes,
+    lastUpdated: Date.now(),
+  };
 }
