@@ -1,7 +1,11 @@
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 import { MediaType } from '@/lib/storage/types';
 
-const BLOBS_DIR = `${FileSystem.documentDirectory}JournalLink/blobs/`;
+// On web, FileSystem.documentDirectory is null, so we use a virtual path
+const BLOBS_DIR = Platform.OS === 'web'
+  ? 'journallink-blobs/'
+  : `${FileSystem.documentDirectory}JournalLink/blobs/`;
 
 // MIME type to MediaType mapping
 const MIME_TO_TYPE: Record<string, MediaType> = {
@@ -133,6 +137,11 @@ export function extractTitleFromFilename(filename: string): string {
  * Ensure blobs directory exists
  */
 async function ensureBlobsDirectory(): Promise<void> {
+  if (Platform.OS === 'web') {
+    // Web: No-op, file operations use in-memory or virtual paths
+    return;
+  }
+
   const dirInfo = await FileSystem.getInfoAsync(BLOBS_DIR);
   if (!dirInfo.exists) {
     await FileSystem.makeDirectoryAsync(BLOBS_DIR, { intermediates: true });
@@ -156,16 +165,23 @@ export async function copyFileToAppDirectory(
   sourceUri: string,
   originalFilename: string
 ): Promise<string> {
+  if (Platform.OS === 'web') {
+    // Web: File copying not fully supported, return the original URI
+    // The file exists in the browser's memory/cache
+    console.warn('[Web] File copying not supported, using original URI');
+    return sourceUri;
+  }
+
   await ensureBlobsDirectory();
-  
+
   const uniqueFilename = generateUniqueFilename(originalFilename);
   const destPath = `${BLOBS_DIR}${uniqueFilename}`;
-  
+
   await FileSystem.copyAsync({
     from: sourceUri,
     to: destPath,
   });
-  
+
   return destPath;
 }
 
@@ -173,6 +189,12 @@ export async function copyFileToAppDirectory(
  * Get file size from URI
  */
 export async function getFileSizeFromUri(uri: string): Promise<number> {
+  if (Platform.OS === 'web') {
+    // Web: FileSystem.getInfoAsync not fully supported
+    // Return 0 as we can't reliably get file size
+    return 0;
+  }
+
   try {
     const info = await FileSystem.getInfoAsync(uri);
     return info.exists && 'size' in info ? info.size : 0;
@@ -194,6 +216,27 @@ export function formatFileSize(bytes: number): string {
   
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${units[i]}`;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

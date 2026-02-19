@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Appbar, Text, Switch, List, Card, Button } from 'react-native-paper';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Appbar, Text, Switch, List, Card, Button, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSettingsStore } from '@/lib/store';
@@ -30,6 +30,15 @@ export default function SettingsScreen() {
     tagCount: 0,
     entryCount: 0,
   });
+
+  // Snackbar state for web-compatible feedback
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
 
   const loadHealthStats = async () => {
     try {
@@ -80,8 +89,7 @@ export default function SettingsScreen() {
                   value={darkMode}
                   onValueChange={(value) => {
                     setDarkMode(value);
-                    // Show feedback to user
-                    Alert.alert('Theme Updated', `Switched to ${value ? 'dark' : 'light'} mode`);
+                    showSnackbar(`Switched to ${value ? 'dark' : 'light'} mode`);
                   }}
                 />
               )}
@@ -103,11 +111,10 @@ export default function SettingsScreen() {
                   value={bleEnabled}
                   onValueChange={(value) => {
                     setBleEnabled(value);
-                    Alert.alert(
-                      'Bluetooth Sync', 
-                      value 
-                        ? 'Bluetooth sync is now enabled. You can connect with nearby devices.' 
-                        : 'Bluetooth sync has been disabled.'
+                    showSnackbar(
+                      value
+                        ? 'Bluetooth sync enabled'
+                        : 'Bluetooth sync disabled'
                     );
                   }}
                 />
@@ -122,11 +129,10 @@ export default function SettingsScreen() {
                   value={qrFallback}
                   onValueChange={(value) => {
                     setQrFallback(value);
-                    Alert.alert(
-                      'QR Fallback', 
-                      value 
-                        ? 'QR code fallback is now enabled for when Bluetooth is unavailable.' 
-                        : 'QR code fallback has been disabled.'
+                    showSnackbar(
+                      value
+                        ? 'QR code fallback enabled'
+                        : 'QR code fallback disabled'
                     );
                   }}
                 />
@@ -230,6 +236,15 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
       </ScrollView>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -280,5 +295,8 @@ const styles = StyleSheet.create({
     color: theme.colors.secondary,
     fontSize: 12,
     fontWeight: '500',
+  },
+  snackbar: {
+    backgroundColor: theme.colors.inverseSurface,
   },
 });

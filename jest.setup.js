@@ -3,9 +3,6 @@
  * Configures mocks and global test utilities
  */
 
-// Extend expect with React Native Testing Library matchers
-import '@testing-library/jest-native/extend-expect';
-
 // Mock expo-sqlite for all tests
 jest.mock('expo-sqlite', () => ({
   openDatabaseAsync: jest.fn().mockResolvedValue({
@@ -76,8 +73,39 @@ jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-' + Math.random().toString(36).substr(2, 9)),
 }));
 
-// Mock Animated for React Native
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+// Mock React Native modules that Jest has trouble with
+jest.mock('react-native', () => {
+  const RN = jest.requireActual('react-native');
+  return {
+    ...RN,
+    Platform: {
+      ...RN.Platform,
+      OS: 'ios',
+      select: (obj) => obj.ios || obj.default,
+    },
+    NativeModules: {
+      ...RN.NativeModules,
+      UIManager: {
+        RCTView: () => {},
+      },
+    },
+    Animated: {
+      ...RN.Animated,
+      timing: () => ({
+        start: jest.fn(),
+        stop: jest.fn(),
+      }),
+      spring: () => ({
+        start: jest.fn(),
+        stop: jest.fn(),
+      }),
+      Value: jest.fn(() => ({
+        setValue: jest.fn(),
+        interpolate: jest.fn(),
+      })),
+    },
+  };
+});
 
 // Silence console warnings in tests (optional, remove if you want to see warnings)
 const originalWarn = console.warn;
@@ -105,4 +133,3 @@ global.testUtils = {
   // Helper to wait for async operations
   flushPromises: () => new Promise(resolve => setImmediate(resolve)),
 };
-

@@ -8,7 +8,6 @@ import {
   SwipeSession,
   SwipeEvent,
   SwipeEventWithMedia,
-  SessionLedger,
   SwipeSignal,
   CreateSwipeMediaInput,
   UpdateSwipeMediaInput,
@@ -17,9 +16,6 @@ import {
   UpdateSwipeSessionInput,
   CreateSwipeEventInput,
   ListSwipeEventsFilters,
-  CreateSessionLedgerInput,
-  UpdateSessionLedgerInput,
-  ListSessionLedgerFilters,
   CreateSwipeSignalInput,
   ListSwipeSignalsFilters,
   SwipeDecision,
@@ -514,158 +510,4 @@ export async function listSwipeSignals(
   }
 
   return await db.getAllAsync<SwipeSignal>(query, params);
-}
-
-// ============ Session Ledger ============
-
-export async function createSessionLedger(
-  db: SQLite.SQLiteDatabase,
-  input: CreateSessionLedgerInput
-): Promise<string> {
-  await db.runAsync(
-    `INSERT INTO session_ledger
-     (id, started_at, mode, provider, excerpt_counts_json, sensitive_included, token_estimate, cost_estimate_cents)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      input.id,
-      Date.now(),
-      input.mode,
-      input.provider ?? null,
-      input.excerpt_counts_json ?? null,
-      input.sensitive_included ? 1 : 0,
-      input.token_estimate ?? null,
-      input.cost_estimate_cents ?? null,
-    ]
-  );
-  return input.id;
-}
-
-export async function getSessionLedger(
-  db: SQLite.SQLiteDatabase,
-  id: string
-): Promise<SessionLedger | null> {
-  return await db.getFirstAsync<SessionLedger>(
-    'SELECT * FROM session_ledger WHERE id = ?',
-    [id]
-  );
-}
-
-export async function updateSessionLedger(
-  db: SQLite.SQLiteDatabase,
-  id: string,
-  updates: UpdateSessionLedgerInput
-): Promise<boolean> {
-  const fields: string[] = [];
-  const values: any[] = [];
-
-  if (updates.ended_at !== undefined) {
-    fields.push('ended_at = ?');
-    values.push(updates.ended_at);
-  }
-  if (updates.result_json !== undefined) {
-    fields.push('result_json = ?');
-    values.push(updates.result_json);
-  }
-  if (updates.token_estimate !== undefined) {
-    fields.push('token_estimate = ?');
-    values.push(updates.token_estimate);
-  }
-  if (updates.cost_estimate_cents !== undefined) {
-    fields.push('cost_estimate_cents = ?');
-    values.push(updates.cost_estimate_cents);
-  }
-
-  if (fields.length === 0) return false;
-
-  values.push(id);
-
-  const result = await db.runAsync(
-    `UPDATE session_ledger SET ${fields.join(', ')} WHERE id = ?`,
-    values
-  );
-
-  return result.changes > 0;
-}
-
-export async function deleteSessionLedger(
-  db: SQLite.SQLiteDatabase,
-  id: string
-): Promise<boolean> {
-  const result = await db.runAsync('DELETE FROM session_ledger WHERE id = ?', [id]);
-  return result.changes > 0;
-}
-
-export async function listSessionLedger(
-  db: SQLite.SQLiteDatabase,
-  filters?: ListSessionLedgerFilters
-): Promise<SessionLedger[]> {
-  const whereClauses: string[] = [];
-  const params: any[] = [];
-
-  if (filters?.mode) {
-    whereClauses.push('mode = ?');
-    params.push(filters.mode);
-  }
-
-  if (filters?.provider) {
-    whereClauses.push('provider = ?');
-    params.push(filters.provider);
-  }
-
-  if (filters?.dateFrom) {
-    whereClauses.push('started_at >= ?');
-    params.push(filters.dateFrom);
-  }
-
-  if (filters?.dateTo) {
-    whereClauses.push('started_at <= ?');
-    params.push(filters.dateTo);
-  }
-
-  let query = 'SELECT * FROM session_ledger';
-
-  if (whereClauses.length > 0) {
-    query += ' WHERE ' + whereClauses.join(' AND ');
-  }
-
-  query += ' ORDER BY started_at DESC';
-
-  if (filters?.limit) {
-    query += ' LIMIT ?';
-    params.push(filters.limit);
-  }
-
-  if (filters?.offset) {
-    query += ' OFFSET ?';
-    params.push(filters.offset);
-  }
-
-  return await db.getAllAsync<SessionLedger>(query, params);
-}
-
-export async function countSessionLedger(
-  db: SQLite.SQLiteDatabase
-): Promise<number> {
-  const result = await db.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM session_ledger'
-  );
-  return result?.count ?? 0;
-}
-
-export async function getTotalTokensUsed(
-  db: SQLite.SQLiteDatabase
-): Promise<number> {
-  const result = await db.getFirstAsync<{ total: number }>(
-    'SELECT COALESCE(SUM(token_estimate), 0) as total FROM session_ledger'
-  );
-  return result?.total ?? 0;
-}
-
-export async function getTotalCostCents(
-  db: SQLite.SQLiteDatabase
-): Promise<number> {
-  const result = await db.getFirstAsync<{ total: number }>(
-    'SELECT COALESCE(SUM(cost_estimate_cents), 0) as total FROM session_ledger'
-  );
-  return result?.total ?? 0;
 }

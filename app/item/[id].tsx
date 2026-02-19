@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Linking, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Linking, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Appbar, Text, Chip, Card, Button, Snackbar, Divider, Dialog, Portal, TextInput as PaperInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -29,6 +29,11 @@ export default function ItemScreen() {
   const [newTagName, setNewTagName] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<{id: number; name: string; usage_count: number}[]>([]);
   const [relatedItems, setRelatedItems] = useState<MediaItem[]>([]);
+  
+  // Confirmation dialog states (cross-platform alternative to Alert.alert)
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [removeTagDialogVisible, setRemoveTagDialogVisible] = useState(false);
+  const [tagToRemove, setTagToRemove] = useState<{id: number; name: string} | null>(null);
 
   const loadItem = useCallback(async () => {
     try {
@@ -150,34 +155,30 @@ export default function ItemScreen() {
     }
   };
 
-  const handleRemoveTag = async (tagId: number, tagName: string) => {
+  const handleRemoveTag = (tagId: number, tagName: string) => {
     if (!item) return;
+    setTagToRemove({ id: tagId, name: tagName });
+    setRemoveTagDialogVisible(true);
+  };
 
-    Alert.alert(
-      'Remove Tag',
-      `Remove "${tagName}" from this item?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const rawDb = db.getRawDb();
-              await repos.detachTagFromItem(rawDb, item.id, tagId);
-              const updated = await repos.getMediaItem(rawDb, item.id);
-              if (updated) {
-                setItem(updated);
-                showSnackbar('Tag removed');
-              }
-            } catch (error) {
-              console.error('Failed to remove tag:', error);
-              showSnackbar('Failed to remove tag');
-            }
-          },
-        },
-      ]
-    );
+  const confirmRemoveTag = async () => {
+    if (!item || !tagToRemove) return;
+    
+    try {
+      const rawDb = db.getRawDb();
+      await repos.detachTagFromItem(rawDb, item.id, tagToRemove.id);
+      const updated = await repos.getMediaItem(rawDb, item.id);
+      if (updated) {
+        setItem(updated);
+        showSnackbar('Tag removed');
+      }
+    } catch (error) {
+      console.error('Failed to remove tag:', error);
+      showSnackbar('Failed to remove tag');
+    } finally {
+      setRemoveTagDialogVisible(false);
+      setTagToRemove(null);
+    }
   };
 
   const handleAddTag = async (tagNameToAdd?: string) => {
@@ -258,31 +259,25 @@ export default function ItemScreen() {
 
   const handleDeleteItem = () => {
     if (!item) return;
+    setDeleteDialogVisible(true);
+  };
 
-    Alert.alert(
-      'Delete Item',
-      'Are you sure you want to delete this item? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const rawDb = db.getRawDb();
-              await repos.deleteMediaItem(rawDb, item.id);
-              // Update Zustand store to reflect deletion immediately
-              const { removeItem } = useJournalStore.getState();
-              removeItem(item.id);
-              router.back();
-            } catch (error) {
-              console.error('Failed to delete item:', error);
-              showSnackbar('Failed to delete item');
-            }
-          },
-        },
-      ]
-    );
+  const confirmDeleteItem = async () => {
+    if (!item) return;
+    
+    try {
+      const rawDb = db.getRawDb();
+      await repos.deleteMediaItem(rawDb, item.id);
+      // Update Zustand store to reflect deletion immediately
+      const { removeItem } = useJournalStore.getState();
+      removeItem(item.id);
+      setDeleteDialogVisible(false);
+      router.back();
+    } catch (error) {
+      console.error('Failed to delete item:', error);
+      setDeleteDialogVisible(false);
+      showSnackbar('Failed to delete item');
+    }
   };
 
   const showSnackbar = (message: string) => {
@@ -596,6 +591,36 @@ export default function ItemScreen() {
             <Button onPress={() => handleAddTag()} disabled={!newTagName.trim()}>
               Add
             </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Delete Item Confirmation Dialog */}
+        <Dialog visible={deleteDialogVisible} onDismiss={() => setDeleteDialogVisible(false)}>
+          <Dialog.Title>Delete Item</Dialog.Title>
+          <Dialog.Content>
+            <Text>Are you sure you want to delete this item? This cannot be undone.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDeleteDialogVisible(false)}>Cancel</Button>
+            <Button onPress={confirmDeleteItem} textColor={theme.colors.error}>Delete</Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Remove Tag Confirmation Dialog */}
+        <Dialog visible={removeTagDialogVisible} onDismiss={() => {
+          setRemoveTagDialogVisible(false);
+          setTagToRemove(null);
+        }}>
+          <Dialog.Title>Remove Tag</Dialog.Title>
+          <Dialog.Content>
+            <Text>Remove &quot;{tagToRemove?.name}&quot; from this item?</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              setRemoveTagDialogVisible(false);
+              setTagToRemove(null);
+            }}>Cancel</Button>
+            <Button onPress={confirmRemoveTag} textColor={theme.colors.error}>Remove</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

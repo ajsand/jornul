@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 import { db } from '@/lib/storage/db';
 import {
   IngestItem,
@@ -123,10 +124,14 @@ async function processFileIngest(ingestItem: IngestItem): Promise<string> {
     throw new Error('File URI is required for file ingest');
   }
 
-  // Get file info
-  const fileInfo = await FileSystem.getInfoAsync(ingestItem.file_uri);
-  if (!fileInfo.exists) {
-    throw new Error('File does not exist');
+  // Get file info (skip on web where FileSystem is limited)
+  let fileSize = 0;
+  if (Platform.OS !== 'web') {
+    const fileInfo = await FileSystem.getInfoAsync(ingestItem.file_uri);
+    if (!fileInfo.exists) {
+      throw new Error('File does not exist');
+    }
+    fileSize = 'size' in fileInfo ? fileInfo.size : 0;
   }
 
   // Extract filename
@@ -151,7 +156,7 @@ async function processFileIngest(ingestItem: IngestItem): Promise<string> {
       ingest_id: ingestItem.id,
       ingest_source: 'quick_add',
       original_filename: filename,
-      file_size: 'size' in fileInfo ? fileInfo.size : 0,
+      file_size: fileSize,
     }),
   };
 

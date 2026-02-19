@@ -12,6 +12,10 @@ export const theme = {
     onSecondary: '#000000',
     secondaryContainer: '#FF8F00',
     onSecondaryContainer: '#FFF8E1',
+    tertiary: '#26A69A', // Teal
+    onTertiary: '#FFFFFF',
+    tertiaryContainer: '#004D40',
+    onTertiaryContainer: '#A7FFEB',
     background: '#121212',
     onBackground: '#FFFFFF',
     surface: '#1E1E1E',

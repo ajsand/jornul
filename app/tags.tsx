@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Alert } from 'react-native';
+import { View, StyleSheet, FlatList } from 'react-native';
 import {
   Appbar,
   Text,
@@ -12,6 +12,7 @@ import {
   Button,
   TextInput,
   Menu,
+  Snackbar,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -36,6 +37,19 @@ export default function TagsScreen() {
 
   // Menu state
   const [menuVisible, setMenuVisible] = useState<number | null>(null);
+
+  // Delete confirmation dialog state
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [tagToDelete, setTagToDelete] = useState<TagWithCount | null>(null);
+
+  // Snackbar state for web-compatible feedback
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
 
   const loadTags = useCallback(async () => {
     try {
@@ -77,8 +91,9 @@ export default function TagsScreen() {
       setSelectedTag(null);
       setNewName('');
       loadTags();
+      showSnackbar('Tag renamed successfully');
     } catch (error) {
-      Alert.alert('Error', (error as Error).message);
+      showSnackbar(`Error: ${(error as Error).message}`);
     }
   };
 
@@ -87,38 +102,38 @@ export default function TagsScreen() {
 
     try {
       const rawDb = db.getRawDb();
+      const sourceName = selectedTag.name;
+      const targetName = mergeTarget.name;
       await mergeTags(rawDb, selectedTag.id, mergeTarget.id);
       setMergeDialogVisible(false);
       setSelectedTag(null);
       setMergeTarget(null);
       loadTags();
-      Alert.alert('Success', `Merged "${selectedTag.name}" into "${mergeTarget.name}"`);
+      showSnackbar(`Merged "${sourceName}" into "${targetName}"`);
     } catch (error) {
-      Alert.alert('Error', (error as Error).message);
+      showSnackbar(`Error: ${(error as Error).message}`);
     }
   };
 
-  const handleDelete = async (tag: TagWithCount) => {
-    Alert.alert(
-      'Delete Tag',
-      `Are you sure you want to delete "${tag.name}"? This will remove it from all items.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const rawDb = db.getRawDb();
-              await repos.deleteTag(rawDb, tag.id);
-              loadTags();
-            } catch (error) {
-              Alert.alert('Error', (error as Error).message);
-            }
-          },
-        },
-      ]
-    );
+  const handleDelete = (tag: TagWithCount) => {
+    setTagToDelete(tag);
+    setDeleteDialogVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!tagToDelete) return;
+
+    try {
+      const rawDb = db.getRawDb();
+      await repos.deleteTag(rawDb, tagToDelete.id);
+      loadTags();
+      showSnackbar(`Deleted "${tagToDelete.name}"`);
+    } catch (error) {
+      showSnackbar(`Error: ${(error as Error).message}`);
+    } finally {
+      setDeleteDialogVisible(false);
+      setTagToDelete(null);
+    }
   };
 
   const openRenameDialog = (tag: TagWithCount) => {
@@ -306,6 +321,33 @@ export default function TagsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      {/* Delete Confirmation Dialog */}
+      <Portal>
+        <Dialog visible={deleteDialogVisible} onDismiss={() => setDeleteDialogVisible(false)}>
+          <Dialog.Title>Delete Tag</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              Are you sure you want to delete &quot;{tagToDelete?.name}&quot;? This will remove it from all items.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDeleteDialogVisible(false)}>Cancel</Button>
+            <Button onPress={confirmDelete} textColor={theme.colors.error}>
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -416,5 +458,8 @@ const styles = StyleSheet.create({
   },
   mergeChip: {
     marginBottom: 4,
+  },
+  snackbar: {
+    backgroundColor: theme.colors.inverseSurface,
   },
 });

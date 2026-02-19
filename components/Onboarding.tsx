@@ -98,13 +98,25 @@ export function Onboarding({ onComplete, onSkip }: OnboardingProps) {
     if (isLastScreen) {
       onComplete();
     } else {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
+      const nextIndex = currentIndex + 1;
+      // Use scrollToOffset instead of scrollToIndex for web compatibility
+      flatListRef.current?.scrollToOffset({ 
+        offset: nextIndex * SCREEN_WIDTH, 
+        animated: true 
+      });
+      setCurrentIndex(nextIndex);
     }
   };
 
   const goToPrevious = () => {
     if (!isFirstScreen) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex - 1 });
+      const prevIndex = currentIndex - 1;
+      // Use scrollToOffset instead of scrollToIndex for web compatibility
+      flatListRef.current?.scrollToOffset({ 
+        offset: prevIndex * SCREEN_WIDTH, 
+        animated: true 
+      });
+      setCurrentIndex(prevIndex);
     }
   };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Alert, ScrollView, Modal, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, Modal, Dimensions, Platform } from 'react-native';
 import {
   Appbar,
   Text,
@@ -12,6 +12,7 @@ import {
   Chip,
   IconButton,
   Divider,
+  Snackbar,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -91,6 +92,42 @@ export default function SyncScreen() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
 
+  // Dialog and snackbar states for web-compatible feedback
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [errorDialogVisible, setErrorDialogVisible] = useState(false);
+  const [errorDialogTitle, setErrorDialogTitle] = useState('Error');
+  const [errorDialogMessage, setErrorDialogMessage] = useState('');
+  const [successDialogVisible, setSuccessDialogVisible] = useState(false);
+  const [successDialogTitle, setSuccessDialogTitle] = useState('Success');
+  const [successDialogMessage, setSuccessDialogMessage] = useState('');
+  const [infoDialogVisible, setInfoDialogVisible] = useState(false);
+  const [infoDialogTitle, setInfoDialogTitle] = useState('');
+  const [infoDialogMessage, setInfoDialogMessage] = useState('');
+
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
+
+  const showErrorDialog = (title: string, message: string) => {
+    setErrorDialogTitle(title);
+    setErrorDialogMessage(message);
+    setErrorDialogVisible(true);
+  };
+
+  const showSuccessDialog = (title: string, message: string) => {
+    setSuccessDialogTitle(title);
+    setSuccessDialogMessage(message);
+    setSuccessDialogVisible(true);
+  };
+
+  const showInfoDialog = (title: string, message: string) => {
+    setInfoDialogTitle(title);
+    setInfoDialogMessage(message);
+    setInfoDialogVisible(true);
+  };
+
   // Load pending sessions from database
   const loadPendingSessions = useCallback(async () => {
     try {
@@ -136,7 +173,7 @@ export default function SyncScreen() {
       setShowQrModal(true);
     } catch (error) {
       console.error('Failed to generate QR code:', error);
-      Alert.alert('Error', 'Failed to generate QR code. Please try again.');
+      showErrorDialog('Error', 'Failed to generate QR code. Please try again.');
     } finally {
       setGeneratingQr(false);
     }
@@ -151,13 +188,15 @@ export default function SyncScreen() {
   };
 
   const openScanner = async () => {
+    // Check if on web - camera/scanner not supported
+    if (Platform.OS === 'web') {
+      showInfoDialog('Not Available', 'QR scanning is not available on web. Use "Show My QR" and have the other person scan it.');
+      return;
+    }
+
     const hasPermission = hasCameraPermission ?? (await requestCameraPermission());
     if (!hasPermission) {
-      Alert.alert(
-        'Camera Permission Required',
-        'Please grant camera access to scan QR codes.',
-        [{ text: 'OK' }]
-      );
+      showErrorDialog('Camera Permission Required', 'Please grant camera access to scan QR codes.');
       return;
     }
     setScanned(false);
@@ -173,7 +212,7 @@ export default function SyncScreen() {
       const importedSig = decompressSignature(data);
 
       if (!isValidSignature(importedSig)) {
-        Alert.alert('Invalid QR Code', 'This QR code does not contain a valid signature.');
+        showErrorDialog('Invalid QR Code', 'This QR code does not contain a valid signature.');
         setShowScanModal(false);
         return;
       }
@@ -184,11 +223,7 @@ export default function SyncScreen() {
       const exists = await repos.hasPendingSessionForDevice(rawDb, importedSig.deviceId);
 
       if (exists) {
-        Alert.alert(
-          'Already Connected',
-          'You already have a pending session with this device.',
-          [{ text: 'OK' }]
-        );
+        showInfoDialog('Already Connected', 'You already have a pending session with this device.');
         setShowScanModal(false);
         return;
       }
@@ -212,14 +247,10 @@ export default function SyncScreen() {
       addPendingSession(newSession);
       setShowScanModal(false);
 
-      Alert.alert(
-        'Signature Imported!',
-        'The signature has been saved. Review it in the Pending Sessions section.',
-        [{ text: 'OK' }]
-      );
+      showSuccessDialog('Signature Imported!', 'The signature has been saved. Review it in the Pending Sessions section.');
     } catch (error) {
       console.error('Failed to process scanned QR code:', error);
-      Alert.alert('Error', 'Failed to process the QR code. Please try again.');
+      showErrorDialog('Error', 'Failed to process the QR code. Please try again.');
       setShowScanModal(false);
     }
   };
@@ -290,13 +321,10 @@ export default function SyncScreen() {
         result
       );
 
-      Alert.alert(
-        'Compare Complete!',
-        `Found ${result.sharedTags.length} shared interests. Check out your insights!`
-      );
+      showSuccessDialog('Compare Complete!', `Found ${result.sharedTags.length} shared interests. Check out your insights!`);
     } catch (error) {
       console.error('Failed to complete consent:', error);
-      Alert.alert('Error', 'Failed to complete comparison. Please try again.');
+      showErrorDialog('Error', 'Failed to complete comparison. Please try again.');
     }
   };
 
@@ -313,7 +341,7 @@ export default function SyncScreen() {
       updatePendingSessionStatus(session.id, 'rejected');
     } catch (error) {
       console.error('Failed to reject session:', error);
-      Alert.alert('Error', 'Failed to reject session. Please try again.');
+      showErrorDialog('Error', 'Failed to reject session. Please try again.');
     }
   };
 
@@ -334,10 +362,10 @@ export default function SyncScreen() {
     try {
       console.log('Mock advertising started');
       setAdvertising(true);
-      Alert.alert('Success', 'Your device is now visible to others nearby for syncing.');
+      showSnackbar('Your device is now visible to others nearby');
     } catch (error) {
       console.error('Failed to start advertising:', error);
-      Alert.alert('Error', 'Failed to start advertising. Please try again.');
+      showErrorDialog('Error', 'Failed to start advertising. Please try again.');
     }
   };
 
@@ -362,7 +390,7 @@ export default function SyncScreen() {
       }, 1500);
     } catch (error) {
       console.error('Failed to start scanning:', error);
-      Alert.alert('Error', 'Failed to start scanning. Please try again.');
+      showErrorDialog('Error', 'Failed to start scanning. Please try again.');
     }
   };
 
@@ -392,10 +420,10 @@ export default function SyncScreen() {
 
       setSyncResult(device, mockResult);
       await stopScanning();
-      Alert.alert('Connected!', `Successfully synced with ${device.name}`);
+      showSuccessDialog('Connected!', `Successfully synced with ${device.name}`);
     } catch (error) {
       console.error('Failed to connect to device:', error);
-      Alert.alert('Connection Error', 'Failed to connect to the device. Please try again.');
+      showErrorDialog('Connection Error', 'Failed to connect to the device. Please try again.');
     }
   };
 
@@ -472,15 +500,31 @@ export default function SyncScreen() {
                   >
                     Show My QR
                   </Button>
-                  <Button
-                    mode="outlined"
-                    onPress={openScanner}
-                    style={styles.button}
-                    icon={() => <Camera size={18} color={theme.colors.primary} />}
-                  >
-                    Scan QR
-                  </Button>
+                  {Platform.OS !== 'web' ? (
+                    <Button
+                      mode="outlined"
+                      onPress={openScanner}
+                      style={styles.button}
+                      icon={() => <Camera size={18} color={theme.colors.primary} />}
+                    >
+                      Scan QR
+                    </Button>
+                  ) : (
+                    <Button
+                      mode="outlined"
+                      disabled
+                      style={styles.button}
+                      icon={() => <Camera size={18} color={theme.colors.onSurfaceDisabled} />}
+                    >
+                      Scan (Mobile)
+                    </Button>
+                  )}
                 </View>
+                {Platform.OS === 'web' && (
+                  <Text style={styles.webNotice}>
+                    QR scanning requires a mobile device. Use &quot;Show My QR&quot; and have others scan it.
+                  </Text>
+                )}
               </Card.Content>
             </Card>
 
@@ -694,6 +738,54 @@ export default function SyncScreen() {
           onConfirm={handleConsentComplete}
         />
       </Modal>
+
+      {/* Error Dialog */}
+      <Portal>
+        <Dialog visible={errorDialogVisible} onDismiss={() => setErrorDialogVisible(false)}>
+          <Dialog.Title>{errorDialogTitle}</Dialog.Title>
+          <Dialog.Content>
+            <Text>{errorDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setErrorDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Success Dialog */}
+      <Portal>
+        <Dialog visible={successDialogVisible} onDismiss={() => setSuccessDialogVisible(false)}>
+          <Dialog.Title>{successDialogTitle}</Dialog.Title>
+          <Dialog.Content>
+            <Text>{successDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setSuccessDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Info Dialog */}
+      <Portal>
+        <Dialog visible={infoDialogVisible} onDismiss={() => setInfoDialogVisible(false)}>
+          <Dialog.Title>{infoDialogTitle}</Dialog.Title>
+          <Dialog.Content>
+            <Text>{infoDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setInfoDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -1052,5 +1144,15 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     margin: 0,
+  },
+  webNotice: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  snackbar: {
+    backgroundColor: theme.colors.inverseSurface,
   },
 });

@@ -138,6 +138,45 @@ export default function SwipeScreen() {
     });
   };
 
+  /**
+   * Refresh preferences after swipe events change
+   * Called after each swipe to keep preferences UI in sync
+   */
+  const refreshPreferences = useCallback(async () => {
+    try {
+      const rawDb = db.getRawDb();
+      const swipeHistoryData = await repos.getSwipeEventsWithMedia(rawDb, { limit: 100 });
+      const swipePreferences = computePreferences(swipeHistoryData, DEFAULT_CONFIG);
+
+      // Merge with vault preferences if available
+      let combinedPreferences = swipePreferences;
+      try {
+        const vaultItems = await repos.listMediaItems(rawDb, { limit: 100, orderBy: 'created_at', orderDirection: 'DESC' });
+        if (vaultItems.length > 0) {
+          const vaultItemSummaries: VaultItemSummary[] = await Promise.all(
+            vaultItems.map(async (item) => {
+              const tags = await repos.getTagsForItem(rawDb, item.id);
+              return {
+                id: item.id,
+                type: item.type,
+                tags: tags.map(t => t.name),
+                created_at: item.created_at,
+              };
+            })
+          );
+          const vaultPrefs = computeVaultPreferences(vaultItemSummaries, DEFAULT_CONFIG);
+          combinedPreferences = mergePreferences(swipePreferences, vaultPrefs);
+        }
+      } catch (vaultError) {
+        // Vault preferences optional, continue with swipe-only
+      }
+
+      setPreferences(combinedPreferences);
+    } catch (error) {
+      console.error('Failed to refresh preferences:', error);
+    }
+  }, []);
+
   const handleSwipe = useCallback(async (decision: SwipeDecision) => {
     if (currentIndex >= cards.length) return;
 
@@ -174,13 +213,17 @@ export default function SwipeScreen() {
         // Feed swipe signal to AETS for tag confidence adjustment (non-blocking)
         processSwipeFeedback(rawDb, currentCard.id, decision, currentCard.tags_json)
           .catch(err => console.warn('[AETS] Feedback failed:', err));
+
+        // Refresh preferences after successful swipe (non-blocking)
+        refreshPreferences()
+          .catch(err => console.warn('[Swipe] Preferences refresh failed:', err));
       } catch (error) {
         console.error('Failed to record swipe event:', error);
       }
     }
 
     setCurrentIndex(prev => prev + 1);
-  }, [currentIndex, cards, sessionId]);
+  }, [currentIndex, cards, sessionId, refreshPreferences]);
 
   const swipeLeft = () => {
     swipeHaptic();
@@ -655,7 +698,7 @@ export default function SwipeScreen() {
                     </View>
                     <View style={styles.preferenceTags}>
                       {Array.from(preferences.tags.entries())
-                        .filter(([, pref]) => pref.weight > 0.1)
+                        .filter(([, pref]) => pref.weight > 0)
                         .sort((a, b) => b[1].weight - a[1].weight)
                         .slice(0, 6)
                         .map(([tag, pref]) => (
@@ -669,7 +712,7 @@ export default function SwipeScreen() {
                             {tag} ({Math.round(pref.weight * 100)}%)
                           </Chip>
                         ))}
-                      {Array.from(preferences.tags.entries()).filter(([, pref]) => pref.weight > 0.1).length === 0 && (
+                      {Array.from(preferences.tags.entries()).filter(([, pref]) => pref.weight > 0).length === 0 && (
                         <Text style={styles.noDataText}>Keep swiping to discover your interests!</Text>
                       )}
                     </View>

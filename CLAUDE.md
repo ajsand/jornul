@@ -67,6 +67,19 @@ Follow `docs/ARCHITECTURE.md` and `docs/PRODUCT.md` for design decisions.
 
 ## Testing
 
-No test framework configured yet. Manual testing via simulators/devices.
-- Database integration tests: `lib/storage/test-db.ts` has `testDatabase()` function
+Jest is configured with 168 tests covering all major features.
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Full verification (lint + typecheck + tests)
+npm run verify
+```
+
+- See `docs/testing.md` for full QA checklist
+- See `docs/type-audit.md` for type coverage report
 - BLE testing requires physical devices or use QR fallback mode

@@ -1,148 +1,143 @@
 # JournalLink Web Support
 
-This document outlines the configuration and requirements for running JournalLink on the web platform.
+JournalLink runs on the web via Expo's Metro bundler with React Native Web. This document covers web-specific considerations, known limitations, and expected warnings.
 
-## Overview
+## Platform Status
 
-JournalLink uses Expo with React Native for cross-platform support. The web target requires special configuration for certain features, particularly SQLite database access.
+| Feature | Web Support | Notes |
+|---------|-------------|-------|
+| SQLite Database | ✅ Working | Uses WASM via expo-sqlite |
+| Onboarding | ✅ Working | Fixed scroll navigation |
+| Create Entry | ✅ Working | Text and URL capture |
+| Delete Entry | ✅ Working | Uses Paper Dialog |
+| Vault Browser | ✅ Working | Full search and filter |
+| Tag Management | ✅ Working | Add/remove tags |
+| Discover/Swipe | ✅ Working | Button-based interaction |
+| Job Queue | ✅ Working | Background processing |
+| BLE Sync | ❌ Not Available | Native only (use QR fallback) |
+| Haptic Feedback | ❌ Not Available | Silently ignored |
+| Camera | ⚠️ Limited | Basic support only |
+
+## Known Console Warnings
+
+The following warnings appear in the browser console during development. They are **expected** and do not affect functionality.
+
+### 1. `useNativeDriver` Warning
+
+```
+Animated: `useNativeDriver` is not supported because the native animated module is missing.
+Falling back to JS-based animation.
+```
+
+**Cause:** React Native Animated API uses native drivers on mobile for performance. On web, it falls back to JavaScript-based animations automatically.
+
+**Impact:** None. Animations work correctly via the JS fallback.
+
+### 2. Deprecated `shadow*` Props
+
+```
+"shadow*" style props are deprecated. Use "boxShadow".
+```
+
+**Cause:** React Native Paper components use React Native's shadow props internally. React Native Web has deprecated these in favor of CSS `boxShadow`.
+
+**Impact:** None. Shadows render correctly. This warning comes from library code, not app code.
+
+### 3. Deprecated `pointerEvents` Prop
+
+```
+props.pointerEvents is deprecated. Use style.pointerEvents
+```
+
+**Cause:** React Native Paper and other libraries pass `pointerEvents` as a prop rather than a style.
+
+**Impact:** None. Touch handling works correctly.
 
 ## SQLite on Web
 
+JournalLink uses `expo-sqlite` which supports web via WASM (WebAssembly). 
+
 ### Requirements
 
-Expo SQLite on web uses **WebAssembly (WASM)** and requires specific HTTP headers to enable `SharedArrayBuffer`:
+- **Metro Config:** The `metro.config.js` includes WASM support:
+  ```javascript
+  config.resolver.assetExts.push('wasm');
+  config.resolver.unstable_enablePackageExports = true;
+  ```
 
+### OPFS Storage
+
+On web, SQLite uses the Origin Private File System (OPFS) for persistence. This requires:
+
+1. **HTTPS in production** (localhost works in development)
+2. **Same-origin policy** for database access
+3. **No cross-tab sharing** - Only one tab can have the database open at a time
+
+If you see database locking errors:
 ```
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
-
-### Dev Server Configuration
-
-For local development, you may need to configure your development server to include these headers. With Expo Go and `npx expo start --web`, these headers should be handled automatically.
-
-If using a custom server or deploying to production, ensure these headers are set:
-
-#### Vercel (`vercel.json`)
-```json
-{
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
-      ]
-    }
-  ]
-}
+Database is locked by another tab or process.
+Please close other tabs using this app and refresh.
 ```
 
-#### Nginx
-```nginx
-add_header Cross-Origin-Opener-Policy same-origin;
-add_header Cross-Origin-Embedder-Policy require-corp;
+Close other tabs running the app and refresh.
+
+## Web-Specific Behavior
+
+### Alerts and Dialogs
+
+React Native's `Alert.alert()` doesn't work on web. JournalLink uses React Native Paper's `Dialog` component for all confirmations:
+
+- Delete confirmations
+- Save success dialogs
+- Import confirmations
+- Tag removal confirmations
+
+### Navigation
+
+Expo Router handles web navigation automatically. The URL bar reflects the current route:
+
+- `/` or `/inbox` - Inbox
+- `/scratch` - Scratch pad
+- `/library` - Vault
+- `/swipe` - Discover
+- `/item/[id]` - Item detail
+
+### Local Storage
+
+Onboarding completion state uses `localStorage` on web (instead of SecureStore) for reliability.
+
+## Development Tips
+
+### Clear Cache
+
+If you encounter stale state issues:
+```bash
+npx expo start --clear
 ```
 
-### Metro Configuration
+### Browser DevTools
 
-The `metro.config.js` includes necessary settings for WASM support:
+Use Chrome/Firefox DevTools for:
+- Console logs
+- Network inspection
+- Application storage (IndexedDB, localStorage)
 
-```javascript
-// Enable WASM file extension
-config.resolver.assetExts.push('wasm');
+### Testing Responsiveness
 
-// Enable package exports (required for some web polyfills)
-config.resolver.unstable_enablePackageExports = true;
-```
-
-## Storage Fallbacks
-
-### Onboarding State
-
-- **Native (iOS/Android)**: Uses `expo-secure-store` for encrypted local storage
-- **Web**: Uses `localStorage` directly (more reliable than SecureStore's web shim)
-
-The app automatically detects the platform and uses the appropriate storage mechanism. See `app/_layout.tsx` for implementation.
-
-### Database Operations
-
-SQLite operations on web may fail if COOP/COEP headers are not properly configured. The app includes error handling to gracefully degrade:
-
-1. Database initialization includes try/catch blocks
-2. UI screens handle database errors without crashing
-3. Sample/placeholder data may be shown if database is unavailable
+The app is designed for mobile-first but works on larger screens. Use browser DevTools device emulation for testing different screen sizes.
 
 ## Known Limitations
 
-### Web-specific
+1. **No BLE Support:** Bluetooth Low Energy is not available in browsers. Use QR code sync as fallback.
 
-1. **Barcode Scanner**: The `expo-barcode-scanner` may have limited functionality on web. Camera access requires HTTPS in production.
+2. **No Haptic Feedback:** Vibration API has limited support and is silently ignored.
 
-2. **Haptic Feedback**: Haptic APIs are not available on web. The haptic utility functions are no-ops on web.
+3. **File Import:** Document picker may have browser-specific behavior. Drag-and-drop is not currently supported.
 
-3. **Secure Storage**: True secure storage (like Keychain) is not available on web. Sensitive data uses localStorage with appropriate caveats.
+4. **Camera Access:** Requires HTTPS in production. Some features may be limited.
 
-4. **File System**: Direct file system access is limited. File imports use browser file picker APIs.
+## See Also
 
-### Performance
-
-- Initial WASM load may be slower than native SQLite
-- Large database operations should be batched to avoid blocking the main thread
-- Consider lazy loading for screens that heavily use the database
-
-## Testing on Web
-
-```bash
-# Start web development server
-npx expo start --web
-
-# Build for web production
-npx expo export --platform web
-```
-
-### Browser Compatibility
-
-JournalLink web is tested on:
-- Chrome 90+
-- Firefox 90+
-- Safari 15+
-- Edge 90+
-
-Note: SharedArrayBuffer support varies by browser. Chrome and Firefox have full support; Safari has partial support.
-
-## Debugging
-
-### Check COOP/COEP Headers
-
-Open browser DevTools → Network tab → Check response headers for any request.
-
-### SQLite Issues
-
-If SQLite operations fail on web:
-1. Check browser console for WASM-related errors
-2. Verify COOP/COEP headers are present
-3. Try clearing browser cache and localStorage
-4. Check if SharedArrayBuffer is defined: `console.log(typeof SharedArrayBuffer)`
-
-### Storage Debugging
-
-```javascript
-// Check localStorage (web)
-console.log(localStorage.getItem('journallink_onboarding_complete'));
-
-// Check all localStorage keys
-for (let i = 0; i < localStorage.length; i++) {
-  console.log(localStorage.key(i));
-}
-```
-
-## Migration Notes
-
-When migrating from native-only to web-compatible:
-
-1. Replace `SecureStore` usage with platform checks (done in `app/_layout.tsx`)
-2. Ensure all file operations use Expo's cross-platform APIs
-3. Test database migrations on all platforms
-4. Verify routing works correctly with Expo Router's web support
-
+- [Expo Web Documentation](https://docs.expo.dev/workflow/web/)
+- [React Native Web](https://necolas.github.io/react-native-web/)
+- [expo-sqlite Web Support](https://docs.expo.dev/versions/latest/sdk/sqlite/)

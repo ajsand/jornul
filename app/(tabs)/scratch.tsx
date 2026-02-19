@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { Appbar, TextInput, Button, Text, HelperText, Divider } from 'react-native-paper';
+import { View, StyleSheet } from 'react-native';
+import { Appbar, TextInput, Button, Text, HelperText, Divider, Snackbar, Portal, Dialog } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { v4 as uuidv4 } from 'uuid';
@@ -150,9 +150,22 @@ export default function ScratchScreen() {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  
+  // Snackbar and dialog states (cross-platform alternative to Alert.alert)
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [saveDialogVisible, setSaveDialogVisible] = useState(false);
+  const [saveDialogMessage, setSaveDialogMessage] = useState('');
+  const [importDialogVisible, setImportDialogVisible] = useState(false);
+  const [importDialogMessage, setImportDialogMessage] = useState('');
 
   const contentType = detectContentType(text);
   const hasContent = text.trim().length > 0;
+  
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+  };
 
   const handleMassUpload = useCallback(async () => {
     try {
@@ -167,20 +180,14 @@ export default function ScratchScreen() {
       const result = await processBatchUpload(files);
 
       if (result.success) {
-        Alert.alert(
-          'Import Started',
-          `${result.itemCount} file${result.itemCount > 1 ? 's' : ''} added. Check Inbox for progress.`,
-          [
-            { text: 'View Inbox', onPress: () => router.push('/(tabs)/inbox') },
-            { text: 'OK' },
-          ]
-        );
+        setImportDialogMessage(`${result.itemCount} file${result.itemCount > 1 ? 's' : ''} added. Check Inbox for progress.`);
+        setImportDialogVisible(true);
       } else {
-        Alert.alert('Import Failed', result.error || 'Unknown error occurred');
+        showSnackbar(result.error || 'Import failed');
       }
     } catch (error) {
       console.error('Mass upload error:', error);
-      Alert.alert('Error', 'Failed to import files. Please try again.');
+      showSnackbar('Failed to import files. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -194,12 +201,12 @@ export default function ScratchScreen() {
         lightHaptic();
       } else {
         errorHaptic();
-        Alert.alert('Empty Clipboard', 'Nothing to paste');
+        showSnackbar('Clipboard is empty');
       }
     } catch (error) {
       console.error('Failed to paste:', error);
       errorHaptic();
-      Alert.alert('Error', 'Could not read clipboard');
+      showSnackbar('Could not read clipboard');
     }
   }, []);
 
@@ -270,20 +277,13 @@ export default function ScratchScreen() {
       // Success feedback
       successHaptic();
       const typeLabel = urls.length > 1 ? `${urls.length} Links` : (urls.length === 1 ? 'Link' : 'Note');
-      Alert.alert(
-        'Saved!',
-        `${typeLabel} captured. Fetching content and generating tags...`,
-        [
-          { text: 'Add Another', onPress: () => setText('') },
-          { text: 'View Library', onPress: () => router.push('/(tabs)/library') },
-        ]
-      );
-
+      setSaveDialogMessage(`${typeLabel} captured. Fetching content and generating tags...`);
+      setSaveDialogVisible(true);
       setText('');
     } catch (error: any) {
       console.error('Failed to save:', error);
       errorHaptic();
-      Alert.alert('Error', `Failed to save: ${error?.message || 'Unknown error'}`);
+      showSnackbar(`Failed to save: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -360,6 +360,50 @@ export default function ScratchScreen() {
           Use Import Files for photos, PDFs, audio, and video.
         </Text>
       </View>
+
+      {/* Save Success Dialog */}
+      <Portal>
+        <Dialog visible={saveDialogVisible} onDismiss={() => setSaveDialogVisible(false)}>
+          <Dialog.Title>Saved!</Dialog.Title>
+          <Dialog.Content>
+            <Text>{saveDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              setSaveDialogVisible(false);
+              setText('');
+            }}>Add Another</Button>
+            <Button onPress={() => {
+              setSaveDialogVisible(false);
+              router.push('/(tabs)/library');
+            }}>View Library</Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Import Success Dialog */}
+        <Dialog visible={importDialogVisible} onDismiss={() => setImportDialogVisible(false)}>
+          <Dialog.Title>Import Started</Dialog.Title>
+          <Dialog.Content>
+            <Text>{importDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              setImportDialogVisible(false);
+              router.push('/(tabs)/inbox');
+            }}>View Inbox</Button>
+            <Button onPress={() => setImportDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -418,5 +462,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     paddingBottom: 16,
+  },
+  snackbar: {
+    backgroundColor: theme.colors.inverseSurface,
   },
 });

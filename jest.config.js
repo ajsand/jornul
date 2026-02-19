@@ -1,10 +1,9 @@
 /**
  * Jest configuration for JournalLink
- * Uses jest-expo preset for Expo/React Native testing
+ * Uses babel-jest with babel-preset-expo for TypeScript + Expo compatibility
  */
 
 module.exports = {
-  preset: 'jest-expo',
   testEnvironment: 'node',
   
   // Test file patterns
@@ -21,9 +20,14 @@ module.exports = {
   // Setup files
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   
-  // Transform settings
+  // Transform TypeScript with babel-jest using babel.config.js
+  transform: {
+    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
+  },
+  
+  // Transform Expo/RN packages that use ESM
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|lucide-react-native|react-native-paper|react-native-reanimated|react-native-gesture-handler|react-native-screens|react-native-safe-area-context|zustand)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|react-navigation|@react-navigation/.*|react-native-svg|react-native-paper|react-native-reanimated|react-native-gesture-handler|lucide-react-native|zustand|uuid)/)',
   ],
   
   // Coverage settings
@@ -44,5 +48,7 @@ module.exports = {
   
   // Module file extensions
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  
+  // Ignore patterns
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 };
-

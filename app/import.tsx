@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Alert, ScrollView } from 'react-native';
-import { Appbar, Text, Button, Card } from 'react-native-paper';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Appbar, Text, Button, Card, Dialog, Portal, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -23,6 +23,25 @@ export default function ImportScreen() {
   const [importItems, setImportItems] = useState<ImportItem[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importComplete, setImportComplete] = useState(false);
+
+  // Dialog states for web-compatible feedback
+  const [errorDialogVisible, setErrorDialogVisible] = useState(false);
+  const [errorDialogMessage, setErrorDialogMessage] = useState('');
+  const [errorDialogTitle, setErrorDialogTitle] = useState('Error');
+  const [successDialogVisible, setSuccessDialogVisible] = useState(false);
+  const [successDialogMessage, setSuccessDialogMessage] = useState('');
+  const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
+
+  const showErrorDialog = (title: string, message: string) => {
+    setErrorDialogTitle(title);
+    setErrorDialogMessage(message);
+    setErrorDialogVisible(true);
+  };
+
+  const showSuccessDialog = (message: string) => {
+    setSuccessDialogMessage(message);
+    setSuccessDialogVisible(true);
+  };
 
   const updateItemStatus = (
     id: string, 
@@ -58,10 +77,7 @@ export default function ImportScreen() {
 
       // Check file limit
       if (importItems.length + files.length > MAX_FILES) {
-        Alert.alert(
-          'Too Many Files',
-          `You can only import up to ${MAX_FILES} files at once.`
-        );
+        showErrorDialog('Too Many Files', `You can only import up to ${MAX_FILES} files at once.`);
         return;
       }
 
@@ -89,7 +105,7 @@ export default function ImportScreen() {
 
       // Show alert if any files were skipped
       if (skippedFiles.length > 0) {
-        Alert.alert(
+        showErrorDialog(
           'Files Skipped',
           `${skippedFiles.length} file(s) too large (max ${formatFileSize(MAX_FILE_SIZE)}):\n${skippedFiles.slice(0, 3).join(', ')}${skippedFiles.length > 3 ? '...' : ''}`
         );
@@ -99,7 +115,7 @@ export default function ImportScreen() {
 
     } catch (error) {
       console.error('Failed to pick files:', error);
-      Alert.alert('Error', 'Failed to pick files. Please try again.');
+      showErrorDialog('Error', 'Failed to pick files. Please try again.');
     }
   };
 
@@ -164,10 +180,8 @@ export default function ImportScreen() {
 
     // Show summary
     if (successCount > 0) {
-      Alert.alert(
-        'Import Complete',
-        `Successfully imported ${successCount} file(s).${errorCount > 0 ? `\n${errorCount} file(s) failed.` : ''}`,
-        [{ text: 'OK' }]
+      showSuccessDialog(
+        `Successfully imported ${successCount} file(s).${errorCount > 0 ? `\n${errorCount} file(s) failed.` : ''}`
       );
     }
   };
@@ -182,21 +196,15 @@ export default function ImportScreen() {
 
   const handleCancel = () => {
     if (isImporting) {
-      Alert.alert(
-        'Cancel Import?',
-        'Import is in progress. Are you sure you want to cancel?',
-        [
-          { text: 'Continue', style: 'cancel' },
-          { 
-            text: 'Cancel', 
-            style: 'destructive',
-            onPress: () => router.back()
-          }
-        ]
-      );
+      setCancelDialogVisible(true);
     } else {
       router.back();
     }
+  };
+
+  const confirmCancel = () => {
+    setCancelDialogVisible(false);
+    router.back();
   };
 
   const successCount = importItems.filter(i => i.status === 'success').length;
@@ -299,6 +307,46 @@ export default function ImportScreen() {
           </>
         )}
       </View>
+
+      {/* Error Dialog */}
+      <Portal>
+        <Dialog visible={errorDialogVisible} onDismiss={() => setErrorDialogVisible(false)}>
+          <Dialog.Title>{errorDialogTitle}</Dialog.Title>
+          <Dialog.Content>
+            <Text>{errorDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setErrorDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Success Dialog */}
+      <Portal>
+        <Dialog visible={successDialogVisible} onDismiss={() => setSuccessDialogVisible(false)}>
+          <Dialog.Title>Import Complete</Dialog.Title>
+          <Dialog.Content>
+            <Text>{successDialogMessage}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setSuccessDialogVisible(false)}>OK</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Cancel Confirmation Dialog */}
+      <Portal>
+        <Dialog visible={cancelDialogVisible} onDismiss={() => setCancelDialogVisible(false)}>
+          <Dialog.Title>Cancel Import?</Dialog.Title>
+          <Dialog.Content>
+            <Text>Import is in progress. Are you sure you want to cancel?</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setCancelDialogVisible(false)}>Continue</Button>
+            <Button onPress={confirmCancel} textColor={theme.colors.error}>Cancel</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 }
