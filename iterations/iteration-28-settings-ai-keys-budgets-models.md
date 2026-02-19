@@ -1,24 +1,25 @@
-# Iteration 28 — Settings: Provider Keys, Budgets, Local Model Management
+# Iteration 28 — Settings: Gateway Account, AI Usage Controls, Privacy Defaults
 **Primary subagents:** journallink-mobile-ui, journallink-ai-orchestrator  
 **Support subagents:** journallink-release, journallink-qa, journallink-architect
 
 ## Goal
 Make AI settings production-ready:
-- BYOK provider keys
-- per-session budget caps
-- local model management placeholders (download/delete)
+- gateway account/session visibility
+- per-session usage/cost controls
+- privacy defaults for cloud AI behavior
 
 ## Implementation Requirements
 - Settings screens:
-  - OpenAI/Gemini/Anthropic key entry (SecureStore)
-  - budget cap (tokens/$) for cloud calls
-  - local model page (list + status, even if v1 only shows “coming soon”)
+  - account status + subscription state from gateway
+  - cloud AI default toggle (off by default)
+  - budget/cost cap for cloud calls
+  - link-fetch enrichment preference toggle
 - Consent UI reads these settings and enforces caps.
 
 ## Acceptance Criteria
-- Keys can be added/removed.
+- User can view account/subscription status.
 - Budget cap blocks sending if estimate exceeds cap.
 - UI is clear and stable.
 
 ## Commit
-`feat(settings): provider keys + budgets + model management`
+`feat(settings): gateway account + ai budget controls + privacy defaults`
