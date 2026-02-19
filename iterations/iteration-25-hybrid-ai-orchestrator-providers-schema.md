@@ -1,11 +1,11 @@
-# Iteration 25 — Hybrid AI Orchestrator: Providers + Strict Schema + Local Fallback
+# Iteration 25 — AI Orchestrator: Gateway Integration + Strict Schema + Local Fallback
 **Primary subagents:** journallink-ai-orchestrator  
 **Support subagents:** journallink-db, journallink-mobile-ui, journallink-qa, journallink-architect
 
 ## Goal
-Implement the AI middleman end-to-end:
-- local fallback insights (no network / no keys)
-- optional cloud adapters (OpenAI/Gemini/Claude) using user-supplied keys
+Implement AI orchestration end-to-end:
+- local fallback insights (no network)
+- cloud insights via **JournalLink Gateway**
 - strict JSON schema validation
 - evidence pointers back to local items
 
@@ -23,26 +23,26 @@ Implement the AI middleman end-to-end:
   - tag overlap
   - swipe preference similarity
   - topic differences
-- Generate “conversation prompts” heuristically
+- Generate deterministic conversation prompts heuristically
 
-### C) Cloud adapters (BYOK)
-- Settings screen stores keys in SecureStore
-- Provider client builds prompt wrapper using Compare Capsule
-- Validate returned JSON matches schema (reject + show error if not)
+### C) Gateway adapter
+- Use authenticated app session (subscription aware)
+- Send minimized Compare Capsule
+- Validate returned JSON matches schema (reject + show recoverable error otherwise)
 
 ### D) UI integration
 - “Run Insights” button from Consent
-- Progress states: packing → calling → validating → rendering
+- Progress states: packing → sending → validating → rendering
 
 ## Acceptance Criteria
 - Works fully offline using local fallback.
-- With keys, cloud insights render with schema-compliant output.
+- Online gateway insights render with schema-compliant output.
 - Evidence links open item detail screens.
 
 ## Verification Checklist
 - Offline: run insights → see local result
-- Online with key: run insights → see structured result
+- Online: run insights → see structured result
 - Force invalid JSON (simulate) → shows recoverable error
 
 ## Commit
-`feat(ai): hybrid orchestrator + provider adapters + schema validation`
+`feat(ai): gateway orchestrator + schema validation + local fallback`

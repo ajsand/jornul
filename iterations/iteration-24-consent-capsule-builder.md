@@ -7,7 +7,7 @@ Add the Consent gate and build a minimized Compare Capsule:
 - mode: Friend / Heart / Custom
 - topic filters
 - sensitive toggles
-- per-item approvals (first pass: per-category approvals)
+- per-category approvals
 - capsule includes excerpts + aggregated swipe stats
 
 ## Implementation Requirements
@@ -15,8 +15,7 @@ Add the Consent gate and build a minimized Compare Capsule:
 - Mode selector
 - Topic chips
 - Sensitive toggle (default OFF)
-- Cloud toggle (default OFF) + provider selection stub (wired in Iteration 25)
-- Token/cost estimate placeholder
+- Cloud AI toggle (default OFF) + **Gateway usage estimate** (no raw provider picker)
 
 ### B) Capsule builder
 - Select top relevant items per topic:
@@ -26,14 +25,14 @@ Add the Consent gate and build a minimized Compare Capsule:
 
 ### C) Ledger
 - Create local session ledger row:
-  - categories counts only
-  - mode/provider selection
+  - category counts only
+  - cloud/local execution choice
   - timestamp
 
 ## Acceptance Criteria
 - Consent must be completed before any AI insights run.
 - Capsule is minimized and inspectable in-app.
-- Ledger is stored locally.
+- Ledger is stored locally without raw payload persistence.
 
 ## Verification Checklist
 - Create consent session with topic “Basketball”
