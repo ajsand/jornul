@@ -13,22 +13,18 @@
 
 ## Iteration Mapping (Current files)
 
-- Iteration 17: smart link ingestion
-- Iteration 18: AETS noun-phrase quality
-- Iteration 19: Scratch + bulk import + Inbox jobs
-- Iteration 20: Vault filters/search
-- Iteration 21: Swipe deck foundation
-- Iteration 22: Swipe ranking/profile reinforcement
-- Iteration 23: QR signature exchange
-- Iteration 24: consent + capsule builder
-- Iteration 25: gateway-backed insights + schema validation
-- Iteration 26: insights UI/history/evidence
-- Iteration 27: security/privacy controls
-- Iteration 28: settings for gateway account/privacy/usage controls
-- Iteration 29: polish/a11y/perf
-- Iteration 30: release + EAS/store preflight
-- Iteration 31: share intake (iOS extension / Android intent)
-- Iteration 32: optional integrations (OpenClaw connectors), not core transport rewrite
+- Iteration 01: foundation local-first core shell + storage/state baseline
+- Iteration 02: Scratch capture + bulk import + Inbox job visibility
+- Iteration 03: deterministic ingest pipeline state machine
+- Iteration 04: extraction quality + multi-link enrichment
+- Iteration 05: AETS tag/theme quality + taxonomy management
+- Iteration 06: Vault browse/search/filter performance
+- Iteration 07: swipe catalog/session/ranking preference loop
+- Iteration 08: QR signature exchange + pending compare bootstrap
+- Iteration 09: consent policy + capsule builder + session ledgering
+- Iteration 10: cloud gateway integration + schema-safe insights + history
+- Iteration 11: security/privacy/settings/reliability hardening
+- Iteration 12: native share intake + release + app/play store readiness
 
 ## Explicit Product Decisions
 
