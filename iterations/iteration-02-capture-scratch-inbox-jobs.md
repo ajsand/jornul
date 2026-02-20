@@ -4,6 +4,7 @@
 Deliver a fast-capture flow that saves instantly and communicates background enrichment progress clearly.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Immediate save for user actions.
 - Enrichment is resumable background work.
 - Inbox explicitly surfaces item processing states.
@@ -43,7 +44,7 @@ Deliver a fast-capture flow that saves instantly and communicates background enr
 - App restart mid-run resumes queue safely.
 
 ## Verification checklist
-- manual bulk import (10 files)
+- manual bulk import (10 media inputs)
 - manual restart during processing
 - job runner tests for retry/backoff/resume
 - `npx expo lint`

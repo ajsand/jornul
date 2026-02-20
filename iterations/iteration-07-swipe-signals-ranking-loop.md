@@ -4,6 +4,7 @@
 Build preference bootstrap loops that improve discovery relevance while staying transparent and local-first.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Uses `swipe_catalog`, `swipe_sessions`, `swipe_events` domains.
 - Signals support ranking and downstream insights.
 - No opaque black-box behavior without inspectable rationale.
