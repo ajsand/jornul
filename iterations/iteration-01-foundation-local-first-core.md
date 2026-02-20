@@ -4,9 +4,10 @@
 Establish a stable local-first foundation that all later iterations build on: navigation shell, storage schema baseline, migrations, repositories, global state slices, and deterministic status modeling.
 
 ## Architecture alignment (must honor)
-- Local-first is primary (SQLite + local files).
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
+- Local-first is primary (SQLite + local media storage).
 - Screens: Inbox, Scratch, Vault, Swipe, Sync, Settings.
-- Data domains seeded: content, taxonomy, swipe, sync/compare.
+- Data domains seeded: content, taxonomy, swipe, sync/consent.
 - No cloud dependency for core app function.
 
 ## Claude Opus 4.5 implementation contract
@@ -25,10 +26,16 @@ Establish a stable local-first foundation that all later iterations build on: na
 
 ### 2) Storage baseline
 - Verify/create migrations for these tables (minimum columns + timestamps):
-  - `items`, `item_links`, `files`, `extractions`
+  - `items`, `media_files`, `normalized_text`, `jobs`
   - `tags`, `tag_assignments`, `themes`, `theme_members`
   - `swipe_catalog`, `swipe_sessions`, `swipe_events`
-  - `signatures`, `pending_sessions`, `session_ledger`, `compare_sessions`, `insight_cards`
+  - `sync_sessions`, `session_ledger`, consent/capsule metadata tables
+- Ensure baseline indexes exist for:
+  - `items(created_at)`
+  - `items(kind, created_at)`
+  - `items(source_domain)`
+  - `tag_assignments(tag_id)`
+  - `swipe_events(media_id, created_at)`
 - Add forward-only migration numbering and migration test coverage.
 
 ### 3) Repository contracts
@@ -39,12 +46,12 @@ Establish a stable local-first foundation that all later iterations build on: na
 ### 4) State slices (Zustand)
 - Add or normalize slices:
   - `journal` (items + ingest status)
-  - `syncSession` (pending compare states)
+  - `syncSession` (consent/capsule flow + sync session states)
   - `settings` (privacy, cloud toggles, diagnostics)
 - Ensure state hydration is resilient after app restart.
 
 ## Acceptance criteria
-- Fresh install runs migrations cleanly.
+- Fresh install runs migrations cleanly with `items` + `media_files` + `normalized_text` + `jobs` and sync session schema.
 - App boots with all 6 core tabs without crashing.
 - Core repository CRUD passes tests.
 - Offline mode still supports creating and listing local items.

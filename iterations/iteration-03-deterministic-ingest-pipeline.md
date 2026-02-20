@@ -4,6 +4,7 @@
 Formalize the ingest pipeline into deterministic resumable stages with durable state transitions and robust failure handling.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 Pipeline stages per item:
 1) detect, 2) normalize, 3) extract, 4) tag, 5) theme refresh, 6) ready/failed update.
 
@@ -37,7 +38,7 @@ Pipeline stages per item:
 
 ## Acceptance criteria
 - Each item progresses through stages deterministically.
-- Re-running pipeline does not duplicate links/tags/themes.
+- Re-running pipeline does not duplicate `items`/`media_files`/`normalized_text` records, jobs, tags, or themes.
 - Failed stage can be retried and continue from checkpoint.
 - Parse all URLs found in input text and support many URLs per item.
 - For each URL when online, fetch HTML with timeout controls and extract OpenGraph fields plus oEmbed when supported.

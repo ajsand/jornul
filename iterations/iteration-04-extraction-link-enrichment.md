@@ -4,6 +4,7 @@
 Improve extraction fidelity and robust handling of multi-link capture so downstream tagging and vault search become useful.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Extraction feeds taxonomy quality.
 - Cloud optionality must not block local flow.
 - Pipeline must still work offline.
@@ -45,6 +46,7 @@ Improve extraction fidelity and robust handling of multi-link capture so downstr
   - noun/phrase focused tags.
   - allow multi-word entities/topics.
   - reject low-signal adjective/verb fragments.
+- Multi-link notes update canonical `items` metadata and any related `normalized_text` segments deterministically.
 - Local extraction succeeds without network access.
 - Offline behavior derives provisional metadata from hostname/path tokens and enqueues a `needs_enrichment` retry job in the `jobs` table.
 - Enrichment failures degrade gracefully.
