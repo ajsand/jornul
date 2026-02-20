@@ -58,7 +58,7 @@ export async function updateExtraction(
   updates: UpdateExtractionInput
 ): Promise<boolean> {
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | number | null)[] = [];
 
   if (updates.content !== undefined) {
     fields.push('content = ?');
@@ -74,7 +74,7 @@ export async function updateExtraction(
   values.push(id);
   const result = await db.runAsync(
     `UPDATE extractions SET ${fields.join(', ')} WHERE id = ?`,
-    values as any[]
+    values
   );
   return result.changes > 0;
 }
@@ -92,7 +92,7 @@ export async function listExtractions(
   filters?: ListExtractionsFilters
 ): Promise<Extraction[]> {
   const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.item_id !== undefined) {
     whereClauses.push('item_id = ?');
@@ -118,7 +118,7 @@ export async function listExtractions(
     params.push(filters.offset);
   }
 
-  return db.getAllAsync<Extraction>(query, params as any[]);
+  return db.getAllAsync<Extraction>(query, params);
 }
 
 export async function deleteExtractionsForItem(

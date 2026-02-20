@@ -55,7 +55,7 @@ export async function updateTheme(
   updates: UpdateThemeInput
 ): Promise<boolean> {
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | number | null)[] = [];
 
   if (updates.name !== undefined) {
     fields.push('name = ?');
@@ -87,7 +87,7 @@ export async function updateTheme(
 
   const result = await db.runAsync(
     `UPDATE themes SET ${fields.join(', ')} WHERE id = ?`,
-    values as any[]
+    values
   );
   return result.changes > 0;
 }
@@ -113,7 +113,7 @@ export async function listThemes(
   }
 
   let query = `SELECT * FROM themes ORDER BY ${orderBy} ${orderDirection}`;
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.limit !== undefined) {
     query += ' LIMIT ?';
@@ -124,7 +124,7 @@ export async function listThemes(
     params.push(filters.offset);
   }
 
-  return db.getAllAsync<Theme>(query, params as any[]);
+  return db.getAllAsync<Theme>(query, params);
 }
 
 export async function getThemeWithTags(
@@ -134,7 +134,17 @@ export async function getThemeWithTags(
   const theme = await getTheme(db, id);
   if (!theme) return null;
 
-  const tags = await db.getAllAsync<any>(
+  type RawThemeTag = {
+    id: number;
+    name: string;
+    slug: string | null;
+    kind: string;
+    created_at: number;
+    updated_at: number | null;
+    confidence: number | null;
+    source: string;
+  };
+  const tags = await db.getAllAsync<RawThemeTag>(
     `SELECT t.id, t.name, t.slug, t.kind, t.created_at, t.updated_at,
             NULL as confidence, 'user' as source
      FROM tags t

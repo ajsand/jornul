@@ -168,7 +168,7 @@ export default function SwipeScreen() {
           const vaultPrefs = computeVaultPreferences(vaultItemSummaries, DEFAULT_CONFIG);
           combinedPreferences = mergePreferences(swipePreferences, vaultPrefs);
         }
-      } catch (vaultError) {
+      } catch {
         // Vault preferences optional, continue with swipe-only
       }
 

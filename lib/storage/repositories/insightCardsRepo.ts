@@ -52,7 +52,7 @@ export async function listInsightCards(
   filters?: ListInsightCardsFilters
 ): Promise<InsightCard[]> {
   const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.item_id !== undefined) {
     whereClauses.push('item_id = ?');
@@ -82,7 +82,7 @@ export async function listInsightCards(
     params.push(filters.offset);
   }
 
-  return db.getAllAsync<InsightCard>(query, params as any[]);
+  return db.getAllAsync<InsightCard>(query, params);
 }
 
 export async function deleteInsightCardsForItem(
@@ -101,7 +101,7 @@ export async function countInsightCards(
   filters?: { item_id?: string; kind?: string; source?: string }
 ): Promise<number> {
   const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.item_id !== undefined) {
     whereClauses.push('item_id = ?');
@@ -121,6 +121,6 @@ export async function countInsightCards(
     query += ' WHERE ' + whereClauses.join(' AND ');
   }
 
-  const result = await db.getFirstAsync<{ count: number }>(query, params as any[]);
+  const result = await db.getFirstAsync<{ count: number }>(query, params);
   return result?.count ?? 0;
 }

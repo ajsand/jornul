@@ -46,7 +46,7 @@ export async function listFiles(
   filters?: ListFilesFilters
 ): Promise<ItemFile[]> {
   const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.item_id !== undefined) {
     whereClauses.push('item_id = ?');
@@ -68,7 +68,7 @@ export async function listFiles(
     params.push(filters.offset);
   }
 
-  return db.getAllAsync<ItemFile>(query, params as any[]);
+  return db.getAllAsync<ItemFile>(query, params);
 }
 
 export async function deleteFilesForItem(
@@ -84,11 +84,11 @@ export async function countFiles(
   item_id?: string
 ): Promise<number> {
   let query = 'SELECT COUNT(*) as count FROM files';
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
   if (item_id !== undefined) {
     query += ' WHERE item_id = ?';
     params.push(item_id);
   }
-  const result = await db.getFirstAsync<{ count: number }>(query, params as any[]);
+  const result = await db.getFirstAsync<{ count: number }>(query, params);
   return result?.count ?? 0;
 }

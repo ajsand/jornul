@@ -60,7 +60,7 @@ export async function updateSignature(
   updates: UpdateSignatureInput
 ): Promise<boolean> {
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | number | null)[] = [];
 
   if (updates.label !== undefined) {
     fields.push('label = ?');
@@ -72,7 +72,7 @@ export async function updateSignature(
   values.push(id);
   const result = await db.runAsync(
     `UPDATE signatures SET ${fields.join(', ')} WHERE id = ?`,
-    values as any[]
+    values
   );
   return result.changes > 0;
 }

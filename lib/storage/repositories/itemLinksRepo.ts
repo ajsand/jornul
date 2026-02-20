@@ -47,7 +47,7 @@ export async function updateItemLink(
   updates: UpdateItemLinkInput
 ): Promise<boolean> {
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | number | null)[] = [];
 
   if (updates.url !== undefined) {
     fields.push('url = ?');
@@ -71,7 +71,7 @@ export async function updateItemLink(
   values.push(id);
   const result = await db.runAsync(
     `UPDATE item_links SET ${fields.join(', ')} WHERE id = ?`,
-    values as any[]
+    values
   );
   return result.changes > 0;
 }
@@ -89,7 +89,7 @@ export async function listItemLinks(
   filters?: ListItemLinksFilters
 ): Promise<ItemLink[]> {
   const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
 
   if (filters?.item_id !== undefined) {
     whereClauses.push('item_id = ?');
@@ -115,7 +115,7 @@ export async function listItemLinks(
     params.push(filters.offset);
   }
 
-  return db.getAllAsync<ItemLink>(query, params as any[]);
+  return db.getAllAsync<ItemLink>(query, params);
 }
 
 export async function countItemLinks(
@@ -123,12 +123,12 @@ export async function countItemLinks(
   item_id?: string
 ): Promise<number> {
   let query = 'SELECT COUNT(*) as count FROM item_links';
-  const params: unknown[] = [];
+  const params: (string | number | null)[] = [];
   if (item_id !== undefined) {
     query += ' WHERE item_id = ?';
     params.push(item_id);
   }
-  const result = await db.getFirstAsync<{ count: number }>(query, params as any[]);
+  const result = await db.getFirstAsync<{ count: number }>(query, params);
   return result?.count ?? 0;
 }
 
