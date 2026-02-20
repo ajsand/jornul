@@ -4,6 +4,7 @@
 Enable AI-powered enrichment/insights for all users via first-party gateway while preserving schema safety and local fallback behavior.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - No primary BYOK flow.
 - App calls JournalLink Gateway endpoints only.
 - Gateway response must be schema-validated JSON before render.
@@ -19,7 +20,7 @@ Enable AI-powered enrichment/insights for all users via first-party gateway whil
   - auth/billing status
   - link enrichment
   - tagging assist
-  - compare insights
+  - sync session insights after consent/capsule approval
 - Add short-lived token handling strategy.
 
 ### 2) Insight schema validation
@@ -28,8 +29,8 @@ Enable AI-powered enrichment/insights for all users via first-party gateway whil
 
 ### 3) Insights rendering and evidence
 - Render insight cards with confidence/rationale fields.
-- Persist to `insight_cards` with provenance metadata.
-- Add insight history view tied to compare session.
+- Persist insight outputs against `sync_sessions` + `session_ledger` with provenance metadata.
+- Add insight history view tied to sync session history and consent/capsule flow states.
 
 ### 4) Offline and failure fallback
 - Local heuristic insight fallback when cloud unavailable.

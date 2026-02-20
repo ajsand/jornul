@@ -1,39 +1,40 @@
-# Iteration 08 — Sync v1: QR Signature Exchange + Compare Session Bootstrap
+# Iteration 08 — Sync v1: QR Session Exchange + Consent/Capsule Flow Bootstrap
 
 ## Why this iteration exists
-Establish reliable in-person compare initiation using QR as baseline transport.
+Establish reliable in-person sync initiation using QR as baseline transport.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - QR exchange is required baseline.
-- Signatures are summary-only.
+- Sync session handshake payloads are summary-only.
 - No compare content exchange before explicit consent.
 
 ## Claude Opus 4.5 implementation contract
 1. Prioritize robustness and clear user flows over protocol complexity.
-2. Keep signature payload minimized and versioned.
+2. Keep sync handshake payload minimized and versioned.
 3. Build for intermittent camera/network conditions.
 
 ## Scope
-### 1) Signature model + serialization
-- Define signature schema/versioning.
+### 1) Sync handshake model + serialization
+- Define sync handshake schema/versioning.
 - Include non-sensitive summary metrics only.
-- Add signing/verification helpers as required.
+- Add payload verification helpers as required.
 
 ### 2) QR exchange UX
-- Generate QR for local signature.
-- Scan and validate peer signature.
+- Generate QR for local sync handshake payload.
+- Scan and validate peer handshake payload.
 - Handle expiration/version mismatch errors gracefully.
 
-### 3) Pending session store
-- Persist exchanged signatures into `pending_sessions`.
-- Track session state transitions from discovered → pending consent.
+### 3) Sync session store
+- Persist exchanged handshake metadata into `sync_sessions`.
+- Track session state transitions from discovered → consent pending → capsule ready.
 
 ### 4) Reliability hardening
 - Retry-friendly exchange flow.
 - Camera permission handling and fallback messaging.
 
 ## Acceptance criteria
-- Two devices can complete signature exchange and create a pending session.
+- Two devices can complete QR exchange and create a `sync_sessions` record in consent-pending state.
 - Invalid/expired payloads are rejected with understandable errors.
 
 ## Verification checklist
@@ -47,5 +48,10 @@ Establish reliable in-person compare initiation using QR as baseline transport.
   - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
   - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
 - Warning: Do not treat web success as production readiness for native capture/sync flows.
+- sync handshake serialization tests
+- QR flow manual tests
+- `npx expo lint`
+- `npx tsc --noEmit`
+
 ## Deliverables
-- Stable QR-first compare session bootstrap.
+- Stable QR-first sync session bootstrap for consent/capsule flow.

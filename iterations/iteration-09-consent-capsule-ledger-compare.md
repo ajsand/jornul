@@ -4,6 +4,7 @@
 Implement strict minimization and user-governed consent before any compare/insight action leaves device.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Consent gate precedes compare request.
 - Capsule is minimized and inspectable.
 - Ledger stores metadata only (no raw shared private payload).
@@ -24,8 +25,8 @@ Implement strict minimization and user-governed consent before any compare/insig
 - Show preview with counts/types and representative excerpts rules.
 - Add validation to block oversized/non-minimized requests.
 
-### 3) Compare session persistence
-- Store compare request metadata in `compare_sessions`.
+### 3) Sync session persistence
+- Store consent/capsule lifecycle metadata in `sync_sessions`.
 - Store metadata-only shared-action entries in `session_ledger`.
 
 ### 4) UX + trust signals
@@ -33,7 +34,7 @@ Implement strict minimization and user-governed consent before any compare/insig
 - “What was shared” history after completion.
 
 ## Acceptance criteria
-- No compare request can be sent without explicit consent confirmation.
+- No sync compare action can be sent without explicit consent confirmation.
 - Ledger never stores raw private body payload.
 - Users can inspect and understand sharing scope.
 

@@ -4,6 +4,7 @@
 Complete production readiness: native share intake in dev/release builds, quality polish, compliance artifacts, and store submission readiness.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Native share intake may require dev builds/config plugins.
 - QR-first sync remains baseline.
 - Cloud gateway is optional per action, not a hard dependency for core local usage.
@@ -17,7 +18,7 @@ Complete production readiness: native share intake in dev/release builds, qualit
 ### 1) Native share intake implementation
 - iOS share extension and Android share intent pathway.
 - Route incoming shared content into Scratch/import pipeline.
-- Ensure robust handling of shared links/text/files.
+- Ensure robust handling of shared links/text/media_files.
 
 ### 2) UX polish + accessibility + performance
 - Accessibility pass (labels, focus order, contrast, dynamic type).

@@ -4,6 +4,7 @@
 Deliver a fast-capture flow that saves instantly and communicates background enrichment progress clearly.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - Immediate save for user actions.
 - Enrichment is resumable background work.
 - Inbox explicitly surfaces item processing states.
@@ -53,5 +54,11 @@ Deliver a fast-capture flow that saves instantly and communicates background enr
   - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
   - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
 - Warning: Do not treat web success as production readiness for native capture/sync flows.
+- manual bulk import (10 media inputs)
+- manual restart during processing
+- job runner tests for retry/backoff/resume
+- `npx expo lint`
+- `npx tsc --noEmit`
+
 ## Deliverables
 - Production-usable Scratch capture flow + Inbox processing visibility.
