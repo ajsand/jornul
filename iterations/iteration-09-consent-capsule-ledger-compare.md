@@ -38,11 +38,15 @@ Implement strict minimization and user-governed consent before any compare/insig
 - Users can inspect and understand sharing scope.
 
 ## Verification checklist
-- tests for capsule minimization + policy enforcement
-- tests validating ledger redaction rules
-- manual consent flow walkthrough
-- `npx expo lint`
-- `npx tsc --noEmit`
-
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 ## Deliverables
 - Enforced consent-and-minimization compare flow.

@@ -46,11 +46,15 @@ Complete production readiness: native share intake in dev/release builds, qualit
 - Final QA sign-off grants production launch readiness.
 
 ## Verification checklist
-- `npx expo lint`
-- `npx tsc --noEmit`
-- full automated test suite
-- iOS/Android manual smoke tests (including share intake)
-- EAS build and install validation
-
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 ## Deliverables
 - Production-ready application and complete store-release artifact set.

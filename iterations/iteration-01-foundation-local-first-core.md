@@ -50,11 +50,16 @@ Establish a stable local-first foundation that all later iterations build on: na
 - Offline mode still supports creating and listing local items.
 
 ## Verification checklist
-- `npx expo lint`
-- `npx tsc --noEmit`
-- storage/repository test suites
-- manual: create local item, kill app, relaunch, verify persistence
-
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 ## Deliverables
 - Updated migrations + repositories + store slices + minimal screen hardening.
 - `docs/STATUS.md` entry summarizing what was completed and deferred.

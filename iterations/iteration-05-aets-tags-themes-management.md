@@ -42,11 +42,15 @@ Produce meaningful emergent tags/themes and give users control over taxonomy qua
 - Themes remain stable across reprocessing.
 
 ## Verification checklist
-- AETS unit tests
-- integration tests for tag merge/rename propagation
-- manual validation on sample dataset
-- `npx expo lint`
-- `npx tsc --noEmit`
-
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 ## Deliverables
 - Meaningful tags/themes + user management tools.
