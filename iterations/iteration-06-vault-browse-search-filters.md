@@ -47,10 +47,15 @@ Transform stored content into a usable personal knowledge vault with fast retrie
 - User can pivot from result to item detail with full context.
 
 ## Verification checklist
-- query correctness tests
-- manual performance sanity on large local dataset
-- `npx expo lint`
-- `npx tsc --noEmit`
-
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 ## Deliverables
 - Production-grade Vault retrieval UX.

@@ -52,6 +52,16 @@ Improve extraction fidelity and robust handling of multi-link capture so downstr
 - Enrichment failures degrade gracefully.
 
 ## Verification checklist
+- Mandatory quality-gate commands (run and pass):
+  - `npx expo lint`
+  - `npx tsc --noEmit`
+  - `npm test` (or the repository's equivalent test command)
+- Iteration-specific automated tests called out in this document.
+- Explicit smoke suite (must pass before sign-off):
+  - Web (quick UI pass): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - Android emulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+  - iOS simulator (core flows): create entry, delete entry, tag assignment, library filters/search, swipe decision updates, preference view updates.
+- Warning: Do not treat web success as production readiness for native capture/sync flows.
 - tests for URL canonicalization/dedupe with many-link inputs
 - tests for extraction storage writes
 - tests that online enrichment fetches timed HTML and persists OpenGraph/oEmbed fields per URL
