@@ -40,10 +40,27 @@ Pipeline stages per item:
 - Each item progresses through stages deterministically.
 - Re-running pipeline does not duplicate `items`/`media_files`/`normalized_text` records, jobs, tags, or themes.
 - Failed stage can be retried and continue from checkpoint.
+- Parse all URLs found in input text and support many URLs per item.
+- For each URL when online, fetch HTML with timeout controls and extract OpenGraph fields plus oEmbed when supported.
+- Title synthesis is deterministic:
+  - single URL input: use the extracted page title.
+  - multi-URL input: generate a compact topic-cluster title.
+- Tag output quality constraints are enforced:
+  - noun/phrase focused tags.
+  - allow multi-word entities/topics.
+  - reject low-signal adjective/verb fragments.
+- Offline ingest behavior is explicit:
+  - derive provisional metadata from hostname/path tokens.
+  - enqueue a `needs_enrichment` retry job in the `jobs` table.
 
 ## Verification checklist
 - integration tests for happy path and failure path
 - idempotency tests (double-run)
+- tests that online URL enrichment fetches timed HTML and stores OpenGraph/oEmbed fields.
+- tests that offline ingest creates provisional metadata and enqueues `needs_enrichment` in `jobs`.
+- tests for deterministic title synthesis for single URL vs multi-URL inputs.
+- tests that tag filtering allows noun phrases/multi-word entities and rejects low-signal adjective/verb fragments.
+- tests that retry workers process `needs_enrichment` deterministically (no duplicate jobs/results across reruns).
 - `npx expo lint`
 - `npx tsc --noEmit`
 

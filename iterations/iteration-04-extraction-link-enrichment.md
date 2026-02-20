@@ -36,13 +36,30 @@ Improve extraction fidelity and robust handling of multi-link capture so downstr
 - Surface extraction errors with retry action.
 
 ## Acceptance criteria
+- Parse all URLs found in input text and support many URLs per item.
+- Multi-link notes produce distinct `item_links` records deterministically.
+- For each URL when online, fetch HTML with timeout controls and extract OpenGraph fields plus oEmbed when supported.
+- Title synthesis is deterministic:
+  - single URL input: use the extracted page title.
+  - multi-URL input: generate a compact topic-cluster title.
+- Tag output quality constraints are enforced:
+  - noun/phrase focused tags.
+  - allow multi-word entities/topics.
+  - reject low-signal adjective/verb fragments.
 - Multi-link notes update canonical `items` metadata and any related `normalized_text` segments deterministically.
 - Local extraction succeeds without network access.
+- Offline behavior derives provisional metadata from hostname/path tokens and enqueues a `needs_enrichment` retry job in the `jobs` table.
 - Enrichment failures degrade gracefully.
 
 ## Verification checklist
-- tests for URL canonicalization/dedupe
+- tests for URL canonicalization/dedupe with many-link inputs
 - tests for extraction storage writes
+- tests that online enrichment fetches timed HTML and persists OpenGraph/oEmbed fields per URL
+- tests that offline path derives provisional metadata and enqueues `needs_enrichment` in `jobs`
+- tests for deterministic title synthesis for single URL vs multi-URL inputs
+- tests that tag filtering allows noun phrases/multi-word entities and rejects low-signal adjective/verb fragments
+- tests for deterministic retry behavior (rerun workers without duplicate `needs_enrichment` jobs/results)
+- manual online run
 - manual offline run
 - `npx expo lint`
 - `npx tsc --noEmit`
