@@ -1,7 +1,30 @@
 # Current State Report (Architecture-Aligned)
 
-**Last updated:** 2026-02-19  
-**Status:** Active development baseline
+**Last updated:** 2026-02-19
+**Status:** Active development — Iteration 01 complete
+
+## Iteration 01 — Foundation: Local-First Core + Baseline App Shell
+
+**Completed:** 2026-02-19
+
+### What was added
+
+- **Migration 7**: 7 new tables — `item_links`, `files`, `extractions`, `themes`, `theme_members`, `signatures`, `insight_cards` — with full indexes on FK and filter columns.
+- **Migration 8**: `ingest_status` column on `media_items` (`saved|enriching|tagging|ready|failed`); existing rows backfilled to `ready`.
+- **Type updates**: `ItemIngestStatus`, `ExtractionStage`, `InsightKind`, `InsightSource` enums; full interfaces + Input/Filter types for all 7 new entities; `MediaItem`, `CreateMediaItemInput`, `UpdateMediaItemInput` updated with `ingest_status`.
+- **6 new repositories**: `itemLinksRepo`, `filesRepo`, `extractionsRepo`, `themesRepo`, `signaturesRepo`, `insightCardsRepo` — all exported from `repositories/index.ts`.
+- **`itemsRepo` updates**: `ingest_status` included in INSERT and UPDATE field-builder.
+- **`useJournalStore` migration**: items typed as `MediaItemWithTags[]`; added `ingestStatusMap`, `updateItem`, `setIngestStatus`; fixed `filteredItems` tag comparison (`tag.name` not string includes).
+- **`useSettingsStore` updates**: added `cloudEnabled` (default `false`), `diagnosticsEnabled` (default `false`), `isHydrated` (default `false`), and `hydrateFromMeta` bulk hydrator.
+- **Settings persistence**: `app/_layout.tsx` hydrates settings from `user_meta` on boot; `settings.tsx` persists each toggle to `user_meta` via `INSERT OR REPLACE`.
+- **New settings UI**: Cloud AI and Diagnostics toggles added to settings screen.
+- **Screen hardening**: `scratch.tsx` — DB init loading/error guard; `sync.tsx` — error state on init failure; `swipe.tsx` — error state on session init failure.
+- **Tests**: 3 new integration test files covering `itemLinksRepo`, `extractionsRepo`, `themesRepo`.
+
+### Deferred decisions
+
+- Cloud gateway API contracts and auth flow (iteration 10)
+- BLE/P2P transport upgrade beyond QR baseline (iteration 12+)
 
 ## Executive Summary
 

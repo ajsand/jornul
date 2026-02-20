@@ -7,11 +7,26 @@ import { useJournalStore, useSyncStore, useSettingsStore } from '@/lib/store';
 import { JournalItem } from '@/lib/storage/db';
 
 // Mock types that match the store's expected types
+interface MockTag {
+  id: number;
+  name: string;
+  slug: string | null;
+  kind: string;
+  created_at: number;
+  updated_at: number | null;
+  confidence: number | null;
+  source: string;
+}
+
+function makeTag(name: string, id = 0): MockTag {
+  return { id, name, slug: name, kind: 'manual', created_at: 0, updated_at: null, confidence: null, source: 'user' };
+}
+
 interface MockJournalItem {
   id: string;
   type: string;
   title: string | null;
-  tags: string[];
+  tags: MockTag[];
   created_at: number;
 }
 
@@ -27,8 +42,8 @@ describe('Store State Management', () => {
 
     it('should set items', () => {
       const items: MockJournalItem[] = [
-        { id: '1', type: 'text', title: 'Note 1', tags: ['work'], created_at: Date.now() },
-        { id: '2', type: 'url', title: 'Link 1', tags: ['tech'], created_at: Date.now() },
+        { id: '1', type: 'text', title: 'Note 1', tags: [makeTag('work')], created_at: Date.now() },
+        { id: '2', type: 'url', title: 'Link 1', tags: [makeTag('tech')], created_at: Date.now() },
       ];
 
       useJournalStore.getState().setItems(items as any);
@@ -48,7 +63,7 @@ describe('Store State Management', () => {
         id: '2',
         type: 'text',
         title: 'New Note',
-        tags: [],
+        tags: [] as MockTag[],
         created_at: Date.now(),
       };
       useJournalStore.getState().addItem(newItem as any);
@@ -60,8 +75,8 @@ describe('Store State Management', () => {
 
     it('should remove item by id', () => {
       const items: MockJournalItem[] = [
-        { id: '1', type: 'text', title: 'Note 1', tags: [], created_at: Date.now() },
-        { id: '2', type: 'text', title: 'Note 2', tags: [], created_at: Date.now() },
+        { id: '1', type: 'text', title: 'Note 1', tags: [] as MockTag[], created_at: Date.now() },
+        { id: '2', type: 'text', title: 'Note 2', tags: [] as MockTag[], created_at: Date.now() },
       ];
       useJournalStore.setState({ items: items as any });
 
@@ -74,9 +89,9 @@ describe('Store State Management', () => {
 
     it('should filter items by selected tags', () => {
       const items: MockJournalItem[] = [
-        { id: '1', type: 'text', title: 'Work Note', tags: ['work', 'important'], created_at: Date.now() },
-        { id: '2', type: 'text', title: 'Personal Note', tags: ['personal'], created_at: Date.now() },
-        { id: '3', type: 'url', title: 'Tech Article', tags: ['tech', 'work'], created_at: Date.now() },
+        { id: '1', type: 'text', title: 'Work Note', tags: [makeTag('work'), makeTag('important')], created_at: Date.now() },
+        { id: '2', type: 'text', title: 'Personal Note', tags: [makeTag('personal')], created_at: Date.now() },
+        { id: '3', type: 'url', title: 'Tech Article', tags: [makeTag('tech'), makeTag('work')], created_at: Date.now() },
       ];
       useJournalStore.setState({ items: items as any });
 
@@ -85,13 +100,13 @@ describe('Store State Management', () => {
 
       const filtered = useJournalStore.getState().filteredItems();
       expect(filtered).toHaveLength(2);
-      expect(filtered.every(item => item.tags.includes('work'))).toBe(true);
+      expect(filtered.every(item => item.tags.some(t => t.name === 'work'))).toBe(true);
     });
 
     it('should return all items when no tags selected', () => {
       const items: MockJournalItem[] = [
-        { id: '1', type: 'text', title: 'Note 1', tags: ['a'], created_at: Date.now() },
-        { id: '2', type: 'text', title: 'Note 2', tags: ['b'], created_at: Date.now() },
+        { id: '1', type: 'text', title: 'Note 1', tags: [makeTag('a')], created_at: Date.now() },
+        { id: '2', type: 'text', title: 'Note 2', tags: [makeTag('b')], created_at: Date.now() },
       ];
       useJournalStore.setState({ items: items as any, selectedTags: [] });
 

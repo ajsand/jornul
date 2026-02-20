@@ -28,6 +28,7 @@ export const testItems: MediaItem[] = [
     notes: 'Thinking about how to be more productive today',
     extracted_text: 'Thinking about how to be more productive today',
     metadata_json: null,
+    ingest_status: 'ready',
     created_at: Date.now() - 86400000 * 5, // 5 days ago
     updated_at: Date.now() - 86400000 * 5,
   },
@@ -40,6 +41,7 @@ export const testItems: MediaItem[] = [
     notes: 'Great resource for RN best practices',
     extracted_text: 'React Native documentation and best practices',
     metadata_json: JSON.stringify({ og_title: 'React Native - Getting Started' }),
+    ingest_status: 'ready',
     created_at: Date.now() - 86400000 * 3, // 3 days ago
     updated_at: Date.now() - 86400000 * 3,
   },
@@ -52,6 +54,7 @@ export const testItems: MediaItem[] = [
     notes: null,
     extracted_text: null,
     metadata_json: JSON.stringify({ type: 'video', duration: 270 }),
+    ingest_status: 'ready',
     created_at: Date.now() - 86400000 * 2, // 2 days ago
     updated_at: Date.now() - 86400000 * 2,
   },
@@ -64,6 +67,7 @@ export const testItems: MediaItem[] = [
     notes: 'Beautiful sunset from Mt. Tamalpais',
     extracted_text: null,
     metadata_json: JSON.stringify({ width: 4032, height: 3024 }),
+    ingest_status: 'ready',
     created_at: Date.now() - 86400000, // 1 day ago
     updated_at: Date.now() - 86400000,
   },
@@ -76,6 +80,7 @@ export const testItems: MediaItem[] = [
     notes: 'Family recipe for pasta',
     extracted_text: 'Ingredients: flour, eggs, tomatoes, basil, olive oil',
     metadata_json: null,
+    ingest_status: 'ready',
     created_at: Date.now(), // today
     updated_at: Date.now(),
   },

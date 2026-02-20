@@ -289,6 +289,114 @@ const migrations: { [version: number]: string } = {
     -- Update existing pending_sessions to have an expiration (7 days from import)
     UPDATE pending_sessions SET expires_at = imported_at + 604800000 WHERE expires_at IS NULL;
   `,
+  7: `
+    -- Item links (enriched URL metadata per item)
+    CREATE TABLE IF NOT EXISTS item_links (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      description TEXT,
+      domain TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES media_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_item_links_item_id ON item_links(item_id);
+    CREATE INDEX IF NOT EXISTS idx_item_links_domain ON item_links(domain);
+
+    -- Files (local file attachments per item)
+    CREATE TABLE IF NOT EXISTS files (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT,
+      local_uri TEXT NOT NULL,
+      size_bytes INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES media_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_files_item_id ON files(item_id);
+
+    -- Extractions (per-stage pipeline output)
+    CREATE TABLE IF NOT EXISTS extractions (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      stage TEXT NOT NULL CHECK(stage IN ('detect','normalize','extract','tag','theme')),
+      content TEXT,
+      confidence REAL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES media_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_extractions_item_id ON extractions(item_id);
+    CREATE INDEX IF NOT EXISTS idx_extractions_stage ON extractions(stage);
+
+    -- Themes (emergent topic clusters)
+    CREATE TABLE IF NOT EXISTS themes (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      description TEXT,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_themes_slug ON themes(slug);
+    CREATE INDEX IF NOT EXISTS idx_themes_item_count ON themes(item_count);
+
+    -- Theme members (tags that belong to themes)
+    CREATE TABLE IF NOT EXISTS theme_members (
+      theme_id TEXT NOT NULL,
+      tag_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (theme_id, tag_id),
+      FOREIGN KEY (theme_id) REFERENCES themes(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_theme_members_theme_id ON theme_members(theme_id);
+    CREATE INDEX IF NOT EXISTS idx_theme_members_tag_id ON theme_members(tag_id);
+
+    -- Signatures (device public key registry)
+    CREATE TABLE IF NOT EXISTS signatures (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      public_key_hash TEXT NOT NULL,
+      label TEXT,
+      created_at INTEGER NOT NULL,
+      UNIQUE(device_id, public_key_hash)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_signatures_device_id ON signatures(device_id);
+
+    -- Insight cards (local or gateway-generated insights)
+    CREATE TABLE IF NOT EXISTS insight_cards (
+      id TEXT PRIMARY KEY,
+      item_id TEXT,
+      kind TEXT NOT NULL CHECK(kind IN ('summary','theme','connection','suggestion')),
+      content_json TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('local','gateway')),
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (item_id) REFERENCES media_items(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_insight_cards_item_id ON insight_cards(item_id);
+    CREATE INDEX IF NOT EXISTS idx_insight_cards_kind ON insight_cards(kind);
+    CREATE INDEX IF NOT EXISTS idx_insight_cards_source ON insight_cards(source);
+    CREATE INDEX IF NOT EXISTS idx_insight_cards_created_at ON insight_cards(created_at);
+  `,
+  8: `
+    -- Add ingest_status column to media_items for pipeline stage tracking
+    ALTER TABLE media_items ADD COLUMN ingest_status TEXT
+      DEFAULT 'saved'
+      CHECK(ingest_status IS NULL OR ingest_status IN ('saved','enriching','tagging','ready','failed'));
+
+    -- Mark existing items as ready (they predate the pipeline)
+    UPDATE media_items SET ingest_status = 'ready' WHERE ingest_status IS NULL OR ingest_status = 'saved';
+  `,
 };
 
 /**

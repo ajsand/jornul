@@ -254,6 +254,7 @@ async function handleNormalizeAndTag(
     notes: refreshedItem.notes,
     extracted_text: refreshedItem.extracted_text,
     metadata_json: refreshedItem.metadata_json,
+    ingest_status: refreshedItem.ingest_status,
     created_at: refreshedItem.created_at,
     updated_at: refreshedItem.updated_at,
   };

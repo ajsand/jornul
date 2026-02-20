@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { JournalItem } from '../storage/db';
+import { JournalItem } from '../storage/db'; // kept for backward compat
+import { MediaItemWithTags, ItemIngestStatus } from '../storage/types';
 import {
   BLEDevice,
   DeviceSignature,
@@ -13,13 +14,16 @@ import {
 } from '../sync/types';
 
 interface JournalState {
-  items: JournalItem[];
+  items: MediaItemWithTags[];
   selectedTags: string[];
-  setItems: (items: JournalItem[]) => void;
-  addItem: (item: JournalItem) => void;
+  ingestStatusMap: Record<string, ItemIngestStatus>;
+  setItems: (items: MediaItemWithTags[]) => void;
+  addItem: (item: MediaItemWithTags) => void;
   removeItem: (id: string) => void;
+  updateItem: (id: string, updates: Partial<MediaItemWithTags>) => void;
   setSelectedTags: (tags: string[]) => void;
-  filteredItems: () => JournalItem[];
+  setIngestStatus: (id: string, status: ItemIngestStatus) => void;
+  filteredItems: () => MediaItemWithTags[];
 }
 
 interface SyncState {
@@ -69,24 +73,38 @@ interface SettingsState {
   bleEnabled: boolean;
   qrFallback: boolean;
   hasSeenOnboarding: boolean;
+  cloudEnabled: boolean;
+  diagnosticsEnabled: boolean;
+  isHydrated: boolean;
   setDarkMode: (enabled: boolean) => void;
   setBleEnabled: (enabled: boolean) => void;
   setQrFallback: (enabled: boolean) => void;
   setHasSeenOnboarding: (seen: boolean) => void;
+  setCloudEnabled: (enabled: boolean) => void;
+  setDiagnosticsEnabled: (enabled: boolean) => void;
+  setIsHydrated: (hydrated: boolean) => void;
+  hydrateFromMeta: (meta: Record<string, string>) => void;
 }
 
 const useJournalStore = create<JournalState>((set, get) => ({
   items: [],
   selectedTags: [],
+  ingestStatusMap: {},
   setItems: (items) => set({ items }),
   addItem: (item) => set((state) => ({ items: [item, ...state.items] })),
   removeItem: (id) => set((state) => ({ items: state.items.filter(item => item.id !== id) })),
+  updateItem: (id, updates) => set((state) => ({
+    items: state.items.map(item => item.id === id ? { ...item, ...updates } : item),
+  })),
   setSelectedTags: (tags) => set({ selectedTags: tags }),
+  setIngestStatus: (id, status) => set((state) => ({
+    ingestStatusMap: { ...state.ingestStatusMap, [id]: status },
+  })),
   filteredItems: () => {
     const { items, selectedTags } = get();
     if (selectedTags.length === 0) return items;
-    return items.filter(item => 
-      selectedTags.some(tag => item.tags.includes(tag))
+    return items.filter(item =>
+      selectedTags.some(tag => item.tags.some(t => t.name === tag))
     );
   },
 }));
@@ -217,10 +235,35 @@ const useSettingsStore = create<SettingsState>((set) => ({
   bleEnabled: true,
   qrFallback: false,
   hasSeenOnboarding: false,
+  cloudEnabled: false,
+  diagnosticsEnabled: false,
+  isHydrated: false,
   setDarkMode: (enabled) => set({ darkMode: enabled }),
   setBleEnabled: (enabled) => set({ bleEnabled: enabled }),
   setQrFallback: (enabled) => set({ qrFallback: enabled }),
   setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
+  setCloudEnabled: (enabled) => set({ cloudEnabled: enabled }),
+  setDiagnosticsEnabled: (enabled) => set({ diagnosticsEnabled: enabled }),
+  setIsHydrated: (hydrated) => set({ isHydrated: hydrated }),
+  hydrateFromMeta: (meta) => {
+    const updates: Partial<SettingsState> = { isHydrated: true };
+    if ('settings.darkMode' in meta) {
+      updates.darkMode = meta['settings.darkMode'] === 'true';
+    }
+    if ('settings.bleEnabled' in meta) {
+      updates.bleEnabled = meta['settings.bleEnabled'] === 'true';
+    }
+    if ('settings.qrFallback' in meta) {
+      updates.qrFallback = meta['settings.qrFallback'] === 'true';
+    }
+    if ('settings.cloudEnabled' in meta) {
+      updates.cloudEnabled = meta['settings.cloudEnabled'] === 'true';
+    }
+    if ('settings.diagnosticsEnabled' in meta) {
+      updates.diagnosticsEnabled = meta['settings.diagnosticsEnabled'] === 'true';
+    }
+    set(updates as SettingsState);
+  },
 }));
 
 export { useJournalStore, useSyncStore, useSettingsStore };

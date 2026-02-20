@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Appbar, TextInput, Button, Text, HelperText, Divider, Snackbar, Portal, Dialog } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -147,6 +147,8 @@ function normalizeUrl(text: string): string {
 }
 
 export default function ScratchScreen() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -159,9 +161,23 @@ export default function ScratchScreen() {
   const [importDialogVisible, setImportDialogVisible] = useState(false);
   const [importDialogMessage, setImportDialogMessage] = useState('');
 
+  // Initialize DB on mount
+  React.useEffect(() => {
+    async function initialize() {
+      try {
+        await db.init();
+        setIsLoading(false);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to initialize');
+        setIsLoading(false);
+      }
+    }
+    initialize();
+  }, []);
+
   const contentType = detectContentType(text);
   const hasContent = text.trim().length > 0;
-  
+
   const showSnackbar = (message: string) => {
     setSnackbarMessage(message);
     setSnackbarVisible(true);
@@ -288,6 +304,35 @@ export default function ScratchScreen() {
       setLoading(false);
     }
   }, [text, hasContent, contentType]);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Appbar.Header style={styles.header}>
+          <Appbar.Content title="Scratch" titleStyle={styles.headerTitle} />
+        </Appbar.Header>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Appbar.Header style={styles.header}>
+          <Appbar.Content title="Scratch" titleStyle={styles.headerTitle} />
+        </Appbar.Header>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Button mode="contained" onPress={() => { setError(null); setIsLoading(true); db.init().then(() => setIsLoading(false)).catch((e: any) => { setError(e?.message || 'Failed'); setIsLoading(false); }); }}>
+            Retry
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -419,6 +464,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: theme.colors.onSurface,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  errorText: {
+    color: theme.colors.error,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   content: {
     flex: 1,

@@ -24,6 +24,7 @@ export interface MediaItem {
   notes: string | null;
   extracted_text: string | null;
   metadata_json: string | null;
+  ingest_status: ItemIngestStatus;
   created_at: number;
   updated_at: number;
 }
@@ -111,6 +112,7 @@ export interface CreateMediaItemInput {
   notes?: string | null;
   extracted_text?: string | null;
   metadata_json?: string | null;
+  ingest_status?: ItemIngestStatus;
 }
 
 export interface UpdateMediaItemInput {
@@ -121,6 +123,7 @@ export interface UpdateMediaItemInput {
   notes?: string | null;
   extracted_text?: string | null;
   metadata_json?: string | null;
+  ingest_status?: ItemIngestStatus;
 }
 
 export interface CreateSwipeSignalInput {
@@ -452,9 +455,202 @@ export interface UpdateTagInput {
   kind?: TagKind;
 }
 
+// ============ Ingest Status (v8) ============
 
+export type ItemIngestStatus = 'saved' | 'enriching' | 'tagging' | 'ready' | 'failed';
+export type ExtractionStage = 'detect' | 'normalize' | 'extract' | 'tag' | 'theme';
+export type InsightKind = 'summary' | 'theme' | 'connection' | 'suggestion';
+export type InsightSource = 'local' | 'gateway';
 
+// ============ Item Links (v7) ============
 
+export interface ItemLink {
+  id: string;
+  item_id: string;
+  url: string;
+  title: string | null;
+  description: string | null;
+  domain: string | null;
+  created_at: number;
+}
+
+export interface CreateItemLinkInput {
+  id: string;
+  item_id: string;
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  domain?: string | null;
+}
+
+export interface UpdateItemLinkInput {
+  url?: string;
+  title?: string | null;
+  description?: string | null;
+  domain?: string | null;
+}
+
+export interface ListItemLinksFilters {
+  item_id?: string;
+  domain?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Files (v7) ============
+
+export interface ItemFile {
+  id: string;
+  item_id: string;
+  filename: string;
+  mime_type: string | null;
+  local_uri: string;
+  size_bytes: number | null;
+  created_at: number;
+}
+
+export interface CreateItemFileInput {
+  id: string;
+  item_id: string;
+  filename: string;
+  mime_type?: string | null;
+  local_uri: string;
+  size_bytes?: number | null;
+}
+
+export interface ListFilesFilters {
+  item_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Extractions (v7) ============
+
+export interface Extraction {
+  id: string;
+  item_id: string;
+  stage: ExtractionStage;
+  content: string | null;
+  confidence: number | null;
+  created_at: number;
+}
+
+export interface CreateExtractionInput {
+  id: string;
+  item_id: string;
+  stage: ExtractionStage;
+  content?: string | null;
+  confidence?: number | null;
+}
+
+export interface UpdateExtractionInput {
+  content?: string | null;
+  confidence?: number | null;
+}
+
+export interface ListExtractionsFilters {
+  item_id?: string;
+  stage?: ExtractionStage;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Themes (v7) ============
+
+export interface Theme {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  item_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ThemeWithTags extends Theme {
+  tags: Array<Tag & { confidence: number | null; source: TagSource }>;
+}
+
+export interface CreateThemeInput {
+  id: string;
+  name: string;
+  slug?: string;
+  description?: string | null;
+}
+
+export interface UpdateThemeInput {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+  item_count?: number;
+}
+
+export interface ThemeMember {
+  theme_id: string;
+  tag_id: number;
+  created_at: number;
+}
+
+export interface ListThemesFilters {
+  limit?: number;
+  offset?: number;
+  orderBy?: 'created_at' | 'updated_at' | 'item_count' | 'name';
+  orderDirection?: 'ASC' | 'DESC';
+}
+
+// ============ Signatures (v7) ============
+
+export interface Signature {
+  id: string;
+  device_id: string;
+  public_key_hash: string;
+  label: string | null;
+  created_at: number;
+}
+
+export interface CreateSignatureInput {
+  id: string;
+  device_id: string;
+  public_key_hash: string;
+  label?: string | null;
+}
+
+export interface UpdateSignatureInput {
+  label?: string | null;
+}
+
+export interface ListSignaturesFilters {
+  device_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ============ Insight Cards (v7) ============
+
+export interface InsightCard {
+  id: string;
+  item_id: string | null;
+  kind: InsightKind;
+  content_json: string;
+  source: InsightSource;
+  created_at: number;
+}
+
+export interface CreateInsightCardInput {
+  id: string;
+  item_id?: string | null;
+  kind: InsightKind;
+  content_json: string;
+  source: InsightSource;
+}
+
+export interface ListInsightCardsFilters {
+  item_id?: string;
+  kind?: InsightKind;
+  source?: InsightSource;
+  limit?: number;
+  offset?: number;
+}
 
 
 

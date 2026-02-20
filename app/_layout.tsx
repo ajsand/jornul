@@ -8,6 +8,7 @@ import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { theme } from '@/lib/theme';
 import { useSettingsStore } from '@/lib/store';
 import { Onboarding } from '@/components/Onboarding';
+import { db } from '@/lib/storage/db';
 
 const ONBOARDING_KEY = 'journallink_onboarding_complete';
 
@@ -51,7 +52,7 @@ export default function RootLayout() {
   useFrameworkReady();
 
   const [isLoading, setIsLoading] = useState(true);
-  const { hasSeenOnboarding, setHasSeenOnboarding } = useSettingsStore();
+  const { hasSeenOnboarding, setHasSeenOnboarding, hydrateFromMeta, setIsHydrated } = useSettingsStore();
 
   // Load onboarding state from storage on mount
   useEffect(() => {
@@ -69,6 +70,26 @@ export default function RootLayout() {
     }
     loadOnboardingState();
   }, [setHasSeenOnboarding]);
+
+  // Hydrate settings from user_meta table (separate from onboarding)
+  useEffect(() => {
+    async function hydrateSettings() {
+      try {
+        await db.init();
+        const rawDb = db.getRawDb();
+        const rows = await rawDb.getAllAsync<{ key: string; value: string }>(
+          "SELECT key, value FROM user_meta WHERE key LIKE 'settings.%'"
+        );
+        const meta: Record<string, string> = {};
+        for (const row of rows) meta[row.key] = row.value;
+        hydrateFromMeta(meta);
+      } catch (error) {
+        console.warn('[Layout] Settings hydration failed:', error);
+        setIsHydrated(true); // don't block UI on error
+      }
+    }
+    hydrateSettings();
+  }, [hydrateFromMeta, setIsHydrated]);
 
   // Handle onboarding completion
   const handleOnboardingComplete = async () => {

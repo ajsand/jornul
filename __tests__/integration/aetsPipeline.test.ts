@@ -26,6 +26,7 @@ describe('AETS Pipeline Integration', () => {
         notes: 'Learning about neural networks and deep learning concepts',
         extracted_text: 'Neural networks are fundamental to modern AI applications',
         metadata_json: null,
+        ingest_status: 'ready',
         created_at: Date.now(),
         updated_at: Date.now(),
       };
@@ -52,6 +53,7 @@ describe('AETS Pipeline Integration', () => {
         notes: null,
         extracted_text: null,
         metadata_json: null,
+        ingest_status: 'ready',
         created_at: Date.now(),
         updated_at: Date.now(),
       };
@@ -76,6 +78,7 @@ describe('AETS Pipeline Integration', () => {
         notes: null,
         extracted_text: null,
         metadata_json: null,
+        ingest_status: 'ready',
         created_at: Date.now(),
         updated_at: Date.now(),
       };
@@ -211,6 +214,7 @@ describe('AETS Pipeline Integration', () => {
         notes: null,
         extracted_text: null,
         metadata_json: null,
+        ingest_status: 'ready',
         created_at: Date.now(),
         updated_at: Date.now(),
       };

@@ -86,6 +86,7 @@ export default function SyncScreen() {
 
   const { bleEnabled } = useSettingsStore();
   const [initializing, setInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const [signature, setSignature] = useState<DeviceSignature | null>(null);
   const [qrValue, setQrValue] = useState<string>('');
   const [generatingQr, setGeneratingQr] = useState(false);
@@ -155,8 +156,9 @@ export default function SyncScreen() {
     try {
       console.log('BLE initialization skipped for MVP');
       setInitializing(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to initialize BLE:', error);
+      setInitError(error?.message || 'Initialization failed');
       setInitializing(false);
     }
   };
@@ -443,6 +445,22 @@ export default function SyncScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>Initializing...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (initError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Appbar.Header style={styles.header}>
+          <Appbar.Content title="Sync" titleStyle={styles.headerTitle} />
+        </Appbar.Header>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: '#f44336' }]}>{initError}</Text>
+          <Button mode="contained" onPress={() => { setInitError(null); setInitializing(true); initializeBLE(); }}>
+            Retry
+          </Button>
         </View>
       </SafeAreaView>
     );

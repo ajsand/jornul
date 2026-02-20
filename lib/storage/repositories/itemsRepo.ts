@@ -27,8 +27,8 @@ export async function createMediaItem(
   const now = Date.now();
   await db.runAsync(
     `INSERT INTO media_items
-     (id, type, title, source_url, local_uri, notes, extracted_text, metadata_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, type, title, source_url, local_uri, notes, extracted_text, metadata_json, ingest_status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
       input.type,
@@ -38,6 +38,7 @@ export async function createMediaItem(
       input.notes ?? null,
       input.extracted_text ?? null,
       input.metadata_json ?? null,
+      input.ingest_status ?? 'saved',
       now,
       now,
     ]
@@ -187,6 +188,10 @@ export async function updateMediaItem(
   if (updates.metadata_json !== undefined) {
     fields.push('metadata_json = ?');
     values.push(updates.metadata_json);
+  }
+  if (updates.ingest_status !== undefined) {
+    fields.push('ingest_status = ?');
+    values.push(updates.ingest_status);
   }
 
   if (fields.length === 0) {

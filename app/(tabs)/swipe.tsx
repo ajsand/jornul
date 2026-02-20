@@ -56,6 +56,7 @@ function generateId(): string {
 
 export default function SwipeScreen() {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [cards, setCards] = useState<SwipeMedia[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -353,8 +354,9 @@ export default function SwipeScreen() {
       setSwipeCounts(counts);
 
       await loadCards();
-    } catch (error) {
-      console.error('Failed to initialize session:', error);
+    } catch (err: any) {
+      console.error('Failed to initialize session:', err);
+      setError(err?.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -417,6 +419,22 @@ export default function SwipeScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading cards...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Appbar.Header style={styles.header}>
+          <Appbar.Content title="Discover" titleStyle={styles.headerTitle} />
+        </Appbar.Header>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: '#f44336' }]}>{error}</Text>
+          <Button mode="contained" onPress={() => { setError(null); setLoading(true); initializeSession(); }}>
+            Retry
+          </Button>
         </View>
       </SafeAreaView>
     );

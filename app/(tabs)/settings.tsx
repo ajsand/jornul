@@ -14,14 +14,30 @@ interface HealthStats {
   entryCount: number;
 }
 
+async function persistSetting(key: string, value: string) {
+  try {
+    const rawDb = db.getRawDb();
+    await rawDb.runAsync(
+      'INSERT OR REPLACE INTO user_meta (key, value) VALUES (?, ?)',
+      [key, value]
+    );
+  } catch (error) {
+    console.warn('[Settings] Failed to persist setting:', key, error);
+  }
+}
+
 export default function SettingsScreen() {
   const {
     darkMode,
     bleEnabled,
     qrFallback,
+    cloudEnabled,
+    diagnosticsEnabled,
     setDarkMode,
     setBleEnabled,
-    setQrFallback
+    setQrFallback,
+    setCloudEnabled,
+    setDiagnosticsEnabled,
   } = useSettingsStore();
 
   const [healthStats, setHealthStats] = useState<HealthStats>({
@@ -89,6 +105,7 @@ export default function SettingsScreen() {
                   value={darkMode}
                   onValueChange={(value) => {
                     setDarkMode(value);
+                    persistSetting('settings.darkMode', value ? 'true' : 'false');
                     showSnackbar(`Switched to ${value ? 'dark' : 'light'} mode`);
                   }}
                 />
@@ -111,6 +128,7 @@ export default function SettingsScreen() {
                   value={bleEnabled}
                   onValueChange={(value) => {
                     setBleEnabled(value);
+                    persistSetting('settings.bleEnabled', value ? 'true' : 'false');
                     showSnackbar(
                       value
                         ? 'Bluetooth sync enabled'
@@ -129,10 +147,57 @@ export default function SettingsScreen() {
                   value={qrFallback}
                   onValueChange={(value) => {
                     setQrFallback(value);
+                    persistSetting('settings.qrFallback', value ? 'true' : 'false');
                     showSnackbar(
                       value
                         ? 'QR code fallback enabled'
                         : 'QR code fallback disabled'
+                    );
+                  }}
+                />
+              )}
+            />
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleLarge" style={styles.sectionTitle}>
+              Privacy & AI
+            </Text>
+            <List.Item
+              title="Cloud AI"
+              description="Allow AI requests through JournalLink Gateway (requires account)"
+              left={(props) => <List.Icon {...props} icon="cloud" />}
+              right={() => (
+                <Switch
+                  value={cloudEnabled}
+                  onValueChange={(value) => {
+                    setCloudEnabled(value);
+                    persistSetting('settings.cloudEnabled', value ? 'true' : 'false');
+                    showSnackbar(
+                      value
+                        ? 'Cloud AI enabled'
+                        : 'Cloud AI disabled — local-only mode'
+                    );
+                  }}
+                />
+              )}
+            />
+            <List.Item
+              title="Diagnostics"
+              description="Share anonymous crash reports to improve the app"
+              left={(props) => <List.Icon {...props} icon="chart-bar" />}
+              right={() => (
+                <Switch
+                  value={diagnosticsEnabled}
+                  onValueChange={(value) => {
+                    setDiagnosticsEnabled(value);
+                    persistSetting('settings.diagnosticsEnabled', value ? 'true' : 'false');
+                    showSnackbar(
+                      value
+                        ? 'Diagnostics enabled'
+                        : 'Diagnostics disabled'
                     );
                   }}
                 />

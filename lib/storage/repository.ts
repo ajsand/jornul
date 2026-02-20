@@ -588,6 +588,7 @@ export async function getCompareSession(
         notes: item.notes,
         extracted_text: item.extracted_text,
         metadata_json: item.metadata_json,
+        ingest_status: (item as any).ingest_status ?? 'ready',
         created_at: item.created_at,
         updated_at: item.updated_at,
       },
