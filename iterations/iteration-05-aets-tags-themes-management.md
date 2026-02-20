@@ -4,6 +4,7 @@
 Produce meaningful emergent tags/themes and give users control over taxonomy quality.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - AETS is noun-phrase oriented.
 - Theme refresh is incremental.
 - Tagging remains deterministic and explainable.

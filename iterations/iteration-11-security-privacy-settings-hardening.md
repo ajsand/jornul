@@ -4,6 +4,7 @@
 Finalize trust-critical controls before release: privacy defaults, secret handling, diagnostics hygiene, and resilience.
 
 ## Architecture alignment (must honor)
+- Schema references must align with CLAUDE.md §6: `items`, `media_files`, `normalized_text`, `jobs`, `sync_sessions`, and `session_ledger`.
 - No raw private content logging.
 - No plaintext secret storage.
 - Local-first behavior independent of gateway availability.
